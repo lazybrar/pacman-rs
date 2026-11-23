@@ -36,7 +36,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | signing.c | signing.rs | todo |
 | sync.c | sync.rs | todo |
 | trans.c | trans.rs | todo |
-| util.c | util.rs | partial (pm_printf, resolve_path) |
+| util.c | util.rs | partial (CFile/fgets, splitname, hash_sdbm, parsedate, strtoofft, fnmatch) |
 | version.c | version.rs | done |
 
 ## src/pacman -> pacman-rs
