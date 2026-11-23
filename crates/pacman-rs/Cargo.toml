@@ -1,0 +1,7 @@
+[package]
+name = "pacman-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libalpm-rs = { path = "../libalpm-rs" }
