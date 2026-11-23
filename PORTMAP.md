@@ -1,69 +1,70 @@
 # Port map
 
-C file (pacman 7.1.0) -> Rust module. Status: todo / done.
+C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/src/`; CLI modules in `crates/pacman-rs/src/`.
 
-## libalpm (crates/libalpm-rs/src)
-
-| C file | Rust module | Status |
-|---|---|---|
-| lib/libalpm/add.c | `add` | todo |
-| lib/libalpm/alpm.c | `alpm` | todo |
-| lib/libalpm/alpm_list.c | n/a (Vec) | n/a |
-| lib/libalpm/backup.c | `backup` | todo |
-| lib/libalpm/base64.c | `base64` | todo |
-| lib/libalpm/be_local.c | `be_local` | todo |
-| lib/libalpm/be_package.c | `be_package` | todo |
-| lib/libalpm/be_sync.c | `be_sync` | todo |
-| lib/libalpm/conflict.c | `conflict` | todo |
-| lib/libalpm/db.c | `db` | todo |
-| lib/libalpm/deps.c | `deps` | todo |
-| lib/libalpm/diskspace.c | `diskspace` | todo |
-| lib/libalpm/dload.c | `dload` | todo |
-| lib/libalpm/error.c | `error` | done |
-| lib/libalpm/filelist.c | `filelist` | todo |
-| lib/libalpm/graph.c | `graph` | todo |
-| lib/libalpm/group.c | `group` | todo |
-| lib/libalpm/handle.c | `handle` | todo |
-| lib/libalpm/hook.c | `hook` | todo |
-| lib/libalpm/log.c | `log` | todo |
-| lib/libalpm/package.c | `package` | todo |
-| lib/libalpm/pkghash.c | n/a (HashMap) | n/a |
-| lib/libalpm/rawstr.c | `rawstr` | todo |
-| lib/libalpm/remove.c | `remove` | todo |
-| lib/libalpm/sandbox.c | `sandbox` | todo |
-| lib/libalpm/sandbox_fs.c | `sandbox_fs` | todo |
-| lib/libalpm/sandbox_syscalls.c | `sandbox_syscalls` | todo |
-| lib/libalpm/signing.c | `signing` | todo |
-| lib/libalpm/sync.c | `sync` | todo |
-| lib/libalpm/trans.c | `trans` | todo |
-| lib/libalpm/util.c | `util` | todo |
-| lib/libalpm/version.c | `version` | done |
-
-## pacman CLI (crates/pacman-rs/src)
+## lib/libalpm -> libalpm-rs
 
 | C file | Rust module | Status |
 |---|---|---|
-| src/pacman/callback.c | `callback` | todo |
-| src/pacman/check.c | `check` | todo |
-| src/pacman/conf.c | `conf` | todo |
-| src/pacman/database.c | `database` | todo |
-| src/pacman/deptest.c | `deptest` | todo |
-| src/pacman/files.c | `files` | todo |
-| src/pacman/ini.c | `ini` | todo |
-| src/pacman/package.c | `package` | todo |
-| src/pacman/pacman-conf.c | `pacman_conf` | todo |
-| src/pacman/pacman.c | `pacman` | todo |
-| src/pacman/query.c | `query` | todo |
-| src/pacman/remove.c | `remove` | todo |
-| src/pacman/sighandler.c | `sighandler` | todo |
-| src/pacman/sync.c | `sync` | todo |
-| src/pacman/upgrade.c | `upgrade` | todo |
-| src/pacman/util-common.c | `util_common` | todo |
-| src/pacman/util.c | `util` | todo |
+| add.c | add.rs | todo |
+| alpm.c | alpm.rs | todo |
+| alpm_list.c | (Vec, no module) | n/a |
+| backup.c | backup.rs | todo |
+| base64.c | base64.rs | todo |
+| be_local.c | be_local.rs | todo |
+| be_package.c | be_package.rs | todo |
+| be_sync.c | be_sync.rs | todo |
+| conflict.c | conflict.rs | todo |
+| db.c | db.rs | todo |
+| deps.c | deps.rs | todo |
+| diskspace.c | diskspace.rs | todo |
+| dload.c | dload.rs | todo |
+| error.c | error.rs | done |
+| filelist.c | filelist.rs | todo |
+| graph.c | graph.rs | todo |
+| group.c | group.rs | todo |
+| handle.c | handle.rs | todo |
+| hook.c | hook.rs | todo |
+| log.c | log.rs | todo |
+| package.c | package.rs | todo |
+| pkghash.c | (HashMap, no module) | n/a |
+| rawstr.c | rawstr.rs | todo |
+| remove.c | remove.rs | todo |
+| sandbox.c | sandbox.rs | todo |
+| sandbox_fs.c | sandbox_fs.rs | todo |
+| sandbox_syscalls.c | sandbox_syscalls.rs | todo |
+| signing.c | signing.rs | todo |
+| sync.c | sync.rs | todo |
+| trans.c | trans.rs | todo |
+| util.c | util.rs | todo |
+| version.c | version.rs | done |
 
-## Tools
+## src/pacman -> pacman-rs
 
-| C file | Rust target | Status |
+| C file | Rust module | Status |
 |---|---|---|
-| src/util/vercmp.c | `src/bin/vercmp.rs` | done |
-| src/util/testpkg.c | todo | todo |
+| callback.c | callback.rs | todo |
+| check.c | check.rs | todo |
+| conf.c | conf.rs | todo |
+| database.c | database.rs | todo |
+| deptest.c | deptest.rs | todo |
+| files.c | files.rs | todo |
+| ini.c | ini.rs | todo |
+| package.c | package.rs | todo |
+| pacman-conf.c | pacman_conf.rs | todo |
+| pacman.c | pacman.rs | todo |
+| query.c | query.rs | todo |
+| remove.c | remove.rs | todo |
+| sighandler.c | sighandler.rs | todo |
+| sync.c | sync.rs | todo |
+| upgrade.c | upgrade.rs | todo |
+| util-common.c | util_common.rs | todo |
+| util.c | util.rs | todo |
+
+## src/util
+
+| C file | Rust module | Status |
+|---|---|---|
+| vercmp.c | src/bin/vercmp.rs | done |
+| testpkg.c | src/bin/testpkg.rs | todo |
+| util-common.c | (shared with src/pacman/util-common.c) | todo |
