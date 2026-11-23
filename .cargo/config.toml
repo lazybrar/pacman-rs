@@ -1,0 +1,5 @@
+# Builds and all test roots live outside the repo. Override with CARGO_TARGET_DIR.
+# Integration tests: binary = env!("CARGO_BIN_EXE_pacman-rs"), temp roots under env!("CARGO_TARGET_TMPDIR").
+# shortcut: /tmp is tmpfs (RAM, wiped on reboot) -> full rebuild after reboot; move to disk if RAM gets tight.
+[build]
+target-dir = "/tmp/pacman-rs-test/target"
