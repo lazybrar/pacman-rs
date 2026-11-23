@@ -102,7 +102,7 @@ impl DbOps for SyncOps {
             Err(e) => {
                 db.status
                     .set((db.status.get() & !DB_STATUS_VALID) | DB_STATUS_INVALID);
-                return Err(e);
+                return Err(e.err);
             }
         };
         let mut pkgs: Vec<Building> = Vec::new();

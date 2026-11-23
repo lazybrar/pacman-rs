@@ -12,7 +12,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | backup.c | backup.rs | done |
 | base64.c | base64.rs | todo |
 | be_local.c | be_local.rs | partial (read side; write, mtree todo) |
-| be_package.c | be_package.rs | todo |
+| be_package.c | be_package.rs | partial (_alpm_pkg_load_internal, changelog; alpm_pkg_load/validate need signing.c) |
 | be_sync.c | be_sync.rs | partial (read side; update, db signature checks todo) |
 | conflict.c | conflict.rs | todo |
 | db.c | db.rs | partial (read side; search, sync registration todo) |

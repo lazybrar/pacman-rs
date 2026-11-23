@@ -86,6 +86,8 @@ pub struct Pkg {
     pub version: String,
     pub name_hash: u64,
     pub origin: PkgFrom,
+    /// origin_data.file for packages loaded from a file
+    pub file: Option<String>,
     pub filename: Option<String>,
     pub md5sum: Option<String>,
     pub sha256sum: Option<String>,
@@ -115,6 +117,7 @@ impl Pkg {
             version,
             name_hash,
             origin,
+            file: None,
             filename: None,
             md5sum: None,
             sha256sum: None,
