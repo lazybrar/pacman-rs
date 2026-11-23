@@ -36,7 +36,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | signing.c | signing.rs | todo |
 | sync.c | sync.rs | todo |
 | trans.c | trans.rs | todo |
-| util.c | util.rs | todo |
+| util.c | util.rs | partial (pm_printf, resolve_path) |
 | version.c | version.rs | done |
 
 ## src/pacman -> pacman-rs
@@ -45,21 +45,21 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 |---|---|---|
 | callback.c | callback.rs | todo |
 | check.c | check.rs | todo |
-| conf.c | conf.rs | todo |
+| conf.c | conf.rs | partial (config model + file parsing + setdefaults; libalpm setup/callbacks todo) |
 | database.c | database.rs | todo |
 | deptest.c | deptest.rs | todo |
 | files.c | files.rs | todo |
-| ini.c | ini.rs | todo |
+| ini.c | ini.rs | done |
 | package.c | package.rs | todo |
-| pacman-conf.c | pacman_conf.rs | todo |
+| pacman-conf.c | src/bin/pacman-conf.rs | done |
 | pacman.c | pacman.rs | todo |
 | query.c | query.rs | todo |
 | remove.c | remove.rs | todo |
 | sighandler.c | sighandler.rs | todo |
 | sync.c | sync.rs | todo |
 | upgrade.c | upgrade.rs | todo |
-| util-common.c | util_common.rs | todo |
-| util.c | util.rs | todo |
+| util-common.c | util_common.rs | partial (strtrim, wordsplit) |
+| util.c | util.rs | partial (pm_printf, resolve_path) |
 
 ## src/util
 
@@ -68,3 +68,9 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | vercmp.c | src/bin/vercmp.rs | done |
 | testpkg.c | src/bin/testpkg.rs | todo |
 | util-common.c | (shared with src/pacman/util-common.c) | todo |
+
+## Support modules (no C file)
+
+| Rust module | Purpose |
+|---|---|
+| getopt.rs | GNU getopt_long (permutation, glibc messages), used by all CLI binaries |
