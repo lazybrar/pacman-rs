@@ -1,2 +1,13 @@
+pub mod backup;
+pub mod be_local;
+pub mod consts;
+pub mod db;
+pub mod deps;
 pub mod error;
+pub mod filelist;
+pub mod group;
+pub mod handle;
+pub mod log;
+pub mod package;
+pub mod util;
 pub mod version;

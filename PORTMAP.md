@@ -9,24 +9,24 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | add.c | add.rs | todo |
 | alpm.c | alpm.rs | todo |
 | alpm_list.c | (Vec, no module) | n/a |
-| backup.c | backup.rs | todo |
+| backup.c | backup.rs | done |
 | base64.c | base64.rs | todo |
-| be_local.c | be_local.rs | todo |
+| be_local.c | be_local.rs | partial (read side; write, mtree todo) |
 | be_package.c | be_package.rs | todo |
 | be_sync.c | be_sync.rs | todo |
 | conflict.c | conflict.rs | todo |
-| db.c | db.rs | todo |
-| deps.c | deps.rs | todo |
+| db.c | db.rs | partial (read side; search, sync registration todo) |
+| deps.c | deps.rs | partial (alpm_dep_from_string, alpm_dep_compute_string) |
 | diskspace.c | diskspace.rs | todo |
 | dload.c | dload.rs | todo |
 | error.c | error.rs | done |
-| filelist.c | filelist.rs | todo |
+| filelist.c | filelist.rs | done |
 | graph.c | graph.rs | todo |
-| group.c | group.rs | todo |
-| handle.c | handle.rs | todo |
+| group.c | group.rs | done |
+| handle.c | handle.rs | partial (dbpath, log callback, pm_errno) |
 | hook.c | hook.rs | todo |
-| log.c | log.rs | todo |
-| package.c | package.rs | todo |
+| log.c | log.rs | partial (_alpm_log) |
+| package.c | package.rs | partial (accessors, check_meta, xdata; requiredby, dup, should_ignore todo) |
 | pkghash.c | (HashMap, no module) | n/a |
 | rawstr.c | rawstr.rs | todo |
 | remove.c | remove.rs | todo |
@@ -50,7 +50,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | deptest.c | deptest.rs | todo |
 | files.c | files.rs | todo |
 | ini.c | ini.rs | done |
-| package.c | package.rs | todo |
+| package.c | package.rs | partial (accessors, check_meta, xdata; requiredby, dup, should_ignore todo) |
 | pacman-conf.c | src/bin/pacman-conf.rs | done |
 | pacman.c | pacman.rs | todo |
 | query.c | query.rs | todo |

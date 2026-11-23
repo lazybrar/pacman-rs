@@ -364,7 +364,7 @@ fn parse_options(
         "IgnorePkg" => c.ignorepkg.extend(setrepeatingoption(value, "IgnorePkg")),
         "IgnoreGroup" => c.ignoregrp.extend(setrepeatingoption(value, "IgnoreGroup")),
         "HoldPkg" => c.holdpkg.extend(setrepeatingoption(value, "HoldPkg")),
-        // not resolve_path'd: the system pacman (7.1.0.r9, newer than the v7.1.0 tag) stopped doing it
+        // upstream b9f7d4a5 ("Partially revert resolving paths"): CacheDir/HookDir are not resolve_path'd
         "CacheDir" => c.cachedirs.extend(setrepeatingoption(value, "CacheDir")),
         "HookDir" => c.hookdirs.extend(setrepeatingoption(value, "HookDir")),
         "Architecture" => {
