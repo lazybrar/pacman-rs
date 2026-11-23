@@ -249,8 +249,10 @@ dependencies = [
 name = "pacman-rs"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "libalpm-rs",
  "libc",
+ "tar",
 ]
 
 [[package]]

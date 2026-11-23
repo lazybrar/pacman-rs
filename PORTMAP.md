@@ -48,7 +48,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | conf.c | conf.rs | done (xfercommand download callback todo) |
 | database.c | database.rs | todo |
 | deptest.c | deptest.rs | done |
-| files.c | files.rs | todo |
+| files.c | files.rs | done (-Fy not implemented) |
 | ini.c | ini.rs | done |
 | package.c | package.rs | done (signature display of package files needs gpgme) |
 | pacman-conf.c | src/bin/pacman-conf.rs | done |

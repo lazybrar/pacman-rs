@@ -433,3 +433,14 @@ pub fn dump_pkg_search(cfg: &Config, db: &Db, targets: &[String], show_status: b
 
 #[allow(dead_code)]
 const _: usize = T_DEPENDS_ON + T_DESCRIPTION + T_GROUPS + T_NAME;
+
+/// dump_file_list (files.c): '<pkgname> <filepath>' or, with --quiet, '<filepath>'
+pub fn dump_pkg_files_f(cfg: &Config, pkg: &Pkg) {
+    for file in &pkg.files().files {
+        if !cfg.quiet {
+            pr!("{}{}{} ", cfg.colstr.title, pkg.name, cfg.colstr.nocolor);
+        }
+        pr!("{}\n", file.name);
+    }
+    flush_stdout();
+}
