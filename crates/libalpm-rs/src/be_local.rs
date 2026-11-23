@@ -166,6 +166,7 @@ impl DbOps for LocalOps {
                 continue;
             }
             let mut pkg = Pkg::new(Rc::clone(h), pname, pversion, hash, PkgFrom::LocalDb);
+            pkg.dbname = Some(db.treename.clone());
             pkg.local = Some(LocalSrc {
                 dir: format!("{}{}/", dbpath, name),
                 treename: db.treename.clone(),
@@ -478,5 +479,36 @@ impl Pkg {
     pub fn changelog_open(&self) -> Option<std::fs::File> {
         let src = self.local.as_ref()?;
         std::fs::File::open(format!("{}changelog", src.dir)).ok()
+    }
+}
+
+impl Pkg {
+    /// _cache_mtree_open + _cache_mtree_next: the entries of the package's local `mtree` file;
+    /// None when there is no such file or it cannot be read.
+    pub fn local_mtree(&self) -> Option<Vec<crate::archive::MtreeEntry>> {
+        let src = self.local.as_ref()?;
+        let mtfile = format!("{}mtree", src.dir);
+        if !std::path::Path::new(&mtfile).exists() {
+            // there is no mtree file for this package
+            return None;
+        }
+        let res = std::fs::read(&mtfile)
+            .and_then(crate::archive::decompress_bytes)
+            .map_err(|e| strerror(&e))
+            .and_then(|d| crate::archive::read_mtree(&d));
+        match res {
+            Ok(v) => Some(v),
+            Err(m) => {
+                alpm_log!(
+                    self.handle,
+                    LOG_ERROR,
+                    "error while reading file {}: {}\n",
+                    mtfile,
+                    m
+                );
+                self.handle.pm_errno.set(Some(Error::Libarchive));
+                None
+            }
+        }
     }
 }

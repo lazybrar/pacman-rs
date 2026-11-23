@@ -1,5 +1,7 @@
 //! Port of lib/libalpm/deps.c (so far: alpm_dep_from_string, alpm_dep_compute_string).
+use crate::package::Pkg;
 use crate::util::{hash_sdbm, lossy};
+use crate::version::pkg_vercmp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepMod {
@@ -79,6 +81,79 @@ pub fn dep_compute_string(dep: &Dep) -> String {
         None => ("", ""),
     };
     format!("{}{}{}{}{}", dep.name, opr, ver, delim, desc)
+}
+
+/// dep_vercmp
+fn dep_vercmp(version1: &str, m: DepMod, version2: Option<&str>) -> bool {
+    if m == DepMod::Any {
+        return true;
+    }
+    let cmp = pkg_vercmp(Some(version1.as_bytes()), version2.map(str::as_bytes));
+    match m {
+        DepMod::Eq => cmp == 0,
+        DepMod::Ge => cmp >= 0,
+        DepMod::Le => cmp <= 0,
+        DepMod::Lt => cmp < 0,
+        DepMod::Gt => cmp > 0,
+        DepMod::Any => true,
+    }
+}
+
+/// _alpm_depcmp_literal
+pub fn depcmp_literal(pkg: &Pkg, dep: &Dep) -> bool {
+    if pkg.name_hash != dep.name_hash || pkg.name != dep.name {
+        // skip more expensive checks
+        return false;
+    }
+    dep_vercmp(&pkg.version, dep.depmod, dep.version.as_deref())
+}
+
+/// _alpm_depcmp_provides: does any provision satisfy `dep`
+pub fn depcmp_provides(dep: &Dep, provisions: &[Dep]) -> bool {
+    for provision in provisions {
+        // check provisions, name and version if available
+        let same = provision.name_hash == dep.name_hash && provision.name == dep.name;
+        if dep.depmod == DepMod::Any {
+            // any version will satisfy the requirement
+            if same {
+                return true;
+            }
+        } else if provision.depmod == DepMod::Eq {
+            // provision specifies a version, so try it out
+            if same
+                && dep_vercmp(
+                    provision.version.as_deref().unwrap_or(""),
+                    dep.depmod,
+                    dep.version.as_deref(),
+                )
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// _alpm_depcmp
+pub fn depcmp(pkg: &Pkg, dep: &Dep) -> bool {
+    depcmp_literal(pkg, dep) || depcmp_provides(dep, &pkg.desc().provides)
+}
+
+/// find_dep_satisfier
+pub fn find_dep_satisfier<'a>(
+    pkgs: impl IntoIterator<Item = &'a Pkg>,
+    dep: &Dep,
+) -> Option<&'a Pkg> {
+    pkgs.into_iter().find(|p| depcmp(p, dep))
+}
+
+/// alpm_find_satisfier
+pub fn find_satisfier<'a>(
+    pkgs: impl IntoIterator<Item = &'a Pkg>,
+    depstring: &str,
+) -> Option<&'a Pkg> {
+    let dep = dep_from_string(depstring);
+    find_dep_satisfier(pkgs, &dep)
 }
 
 #[cfg(test)]

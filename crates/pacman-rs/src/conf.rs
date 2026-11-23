@@ -51,8 +51,94 @@ pub struct ConfigRepo {
 }
 
 /// The parsed-from-config-file part of upstream's config_t.
-#[derive(Default, Debug)]
+/// colstr_t
+#[derive(Default, Clone)]
+pub struct Colstr {
+    pub colon: &'static str,
+    pub title: &'static str,
+    pub repo: &'static str,
+    pub version: &'static str,
+    pub groups: &'static str,
+    pub meta: &'static str,
+    pub warn: &'static str,
+    pub err: &'static str,
+    pub faint: &'static str,
+    pub nocolor: &'static str,
+}
+
+/// Operations
+pub const PM_OP_MAIN: u16 = 1;
+pub const PM_OP_REMOVE: u16 = 2;
+pub const PM_OP_UPGRADE: u16 = 3;
+pub const PM_OP_QUERY: u16 = 4;
+pub const PM_OP_SYNC: u16 = 5;
+pub const PM_OP_DEPTEST: u16 = 6;
+pub const PM_OP_DATABASE: u16 = 7;
+pub const PM_OP_FILES: u16 = 8;
+
+/// package locality
+pub const PKG_LOCALITY_NATIVE: u16 = 1;
+pub const PKG_LOCALITY_FOREIGN: u16 = 1 << 1;
+
+/// alpm_transflag_t
+pub const TRANS_FLAG_NODEPS: i32 = 1;
+pub const TRANS_FLAG_NOSAVE: i32 = 1 << 2;
+pub const TRANS_FLAG_NODEPVERSION: i32 = 1 << 3;
+pub const TRANS_FLAG_CASCADE: i32 = 1 << 4;
+pub const TRANS_FLAG_RECURSE: i32 = 1 << 5;
+pub const TRANS_FLAG_DBONLY: i32 = 1 << 6;
+pub const TRANS_FLAG_NOHOOKS: i32 = 1 << 7;
+pub const TRANS_FLAG_ALLDEPS: i32 = 1 << 8;
+pub const TRANS_FLAG_DOWNLOADONLY: i32 = 1 << 9;
+pub const TRANS_FLAG_NOSCRIPTLET: i32 = 1 << 10;
+pub const TRANS_FLAG_NOCONFLICTS: i32 = 1 << 11;
+pub const TRANS_FLAG_NEEDED: i32 = 1 << 13;
+pub const TRANS_FLAG_ALLEXPLICIT: i32 = 1 << 14;
+pub const TRANS_FLAG_UNNEEDED: i32 = 1 << 15;
+pub const TRANS_FLAG_RECURSEALL: i32 = 1 << 16;
+pub const TRANS_FLAG_NOLOCK: i32 = 1 << 17;
+
+#[derive(Default)]
 pub struct Config {
+    pub op: u16,
+    pub quiet: bool,
+    pub verbose: u16,
+    pub version: bool,
+    pub help: bool,
+    pub noconfirm: bool,
+    pub print: bool,
+    pub print_format: Option<String>,
+    pub configfile: String,
+    pub op_q_isfile: bool,
+    pub op_q_info: u16,
+    pub op_q_list: bool,
+    pub op_q_unrequired: u16,
+    pub op_q_deps: bool,
+    pub op_q_explicit: bool,
+    pub op_q_owns: bool,
+    pub op_q_search: bool,
+    pub op_q_changelog: bool,
+    pub op_q_upgrade: bool,
+    pub op_q_check: u16,
+    pub op_q_locality: u16,
+    pub op_s_clean: u16,
+    pub op_s_downloadonly: bool,
+    pub op_s_info: u16,
+    pub op_s_sync: u16,
+    pub op_s_search: bool,
+    pub op_s_upgrade: u16,
+    pub op_f_regex: bool,
+    pub op_f_machinereadable: bool,
+    pub group: u16,
+    pub noask: bool,
+    pub ask: u32,
+    pub flags: i32,
+    pub assumeinstalled: Vec<String>,
+    pub overwrite_files: Vec<String>,
+    pub colstr: Colstr,
+    /// our connection to libalpm
+    pub alpm: Option<libalpm_rs::alpm::Alpm>,
+
     pub noprogressbar: bool,
     pub checkspace: bool,
     pub usesyslog: bool,
@@ -89,9 +175,29 @@ pub struct Config {
     pub repos: Vec<ConfigRepo>,
 }
 
-/// enable_colors (only the err/warn/nocolor strings matter so far: see util::COLORS).
-pub fn enable_colors(on: bool) {
+/// enable_colors
+pub fn enable_colors(c: &mut Config, colors: u8) {
+    let on = colors == COLOR_ON;
     crate::util::COLORS.store(on, Ordering::Relaxed);
+    c.colstr = if on {
+        Colstr {
+            colon: "\x1b[1;34m::\x1b[0;1m ",
+            title: "\x1b[0;1m",
+            repo: "\x1b[1;35m",
+            version: "\x1b[1;32m",
+            groups: "\x1b[1;34m",
+            meta: "\x1b[1;36m",
+            warn: "\x1b[1;33m",
+            err: "\x1b[1;31m",
+            faint: "\x1b[38;5;243m",
+            nocolor: "\x1b[0m",
+        }
+    } else {
+        Colstr {
+            colon: ":: ",
+            ..Default::default()
+        }
+    };
 }
 
 /// config_new
@@ -103,11 +209,17 @@ pub fn config_new() -> Config {
         c.remotefilesiglevel = SIG_USE_DEFAULT;
     }
     c.parallel_downloads = 1;
+    c.op = PM_OP_MAIN;
+    c.configfile = CONFFILE.to_string();
+    c.colstr = Colstr {
+        colon: ":: ",
+        ..Default::default()
+    };
     c
 }
 
 /// config_add_architecture
-fn config_add_architecture(c: &mut Config, arch: &str) {
+pub fn config_add_architecture(c: &mut Config, arch: &str) {
     let arch = if arch == "auto" {
         // SAFETY: uname fills the zeroed struct.
         let mut un: libc::utsname = unsafe { std::mem::zeroed() };
@@ -343,7 +455,7 @@ fn parse_options(
                 if c.color == COLOR_UNSET {
                     let tty = std::io::stdout().is_terminal();
                     c.color = if tty { COLOR_ON } else { COLOR_OFF };
-                    enable_colors(tty);
+                    enable_colors(c, c.color);
                 }
             }
             "NoProgressBar" => c.noprogressbar = true,
@@ -811,4 +923,224 @@ pub fn parseconfigfile(c: &mut Config, file: &str) -> i32 {
     parse_ini(&realfile, &mut |f, l, ev| {
         parse_directive(c, &mut section, f, l, ev)
     })
+}
+
+/// register_repo: 0, or 1 on error
+fn register_repo(c: &mut Config, idx: usize) -> i32 {
+    let repo = c.repos[idx].clone();
+    let alpm = c.alpm.as_mut().unwrap();
+    let handle = alpm.handle.clone();
+    let db = match alpm.register_syncdb(&repo.name, repo.siglevel) {
+        Ok(db) => db,
+        Err(e) => {
+            pm_printf!(
+                LOG_ERROR,
+                "could not register '{}' database ({})\n",
+                repo.name,
+                e.strerror()
+            );
+            return 1;
+        }
+    };
+    pm_printf!(
+        LOG_DEBUG,
+        "setting usage of {} for {} repository\n",
+        repo.usage,
+        repo.name
+    );
+    db.set_usage(repo.usage);
+    for value in &repo.cache_servers {
+        if db.add_cache_server(value) != 0 {
+            let e = handle.errno().map_or("unexpected error", |e| e.strerror());
+            pm_printf!(
+                LOG_ERROR,
+                "could not add cache server URL to database '{}': {} ({})\n",
+                db.name(),
+                value,
+                e
+            );
+            return 1;
+        }
+    }
+    for value in &repo.servers {
+        if db.add_server(value) != 0 {
+            let e = handle.errno().map_or("unexpected error", |e| e.strerror());
+            pm_printf!(
+                LOG_ERROR,
+                "could not add server URL to database '{}': {} ({})\n",
+                db.name(),
+                value,
+                e
+            );
+            return 1;
+        }
+    }
+    0
+}
+
+/// setup_libalpm: Sets up libalpm global stuff in one go. Called after the command line and initial config
+/// file parsing.
+fn setup_libalpm(c: &mut Config) -> i32 {
+    use libalpm_rs::alpm::alpm_initialize;
+    pm_printf!(LOG_DEBUG, "setup_libalpm called\n");
+    // initialize library
+    let (rootdir, dbpath) = (c.rootdir.clone().unwrap(), c.dbpath.clone().unwrap());
+    let alpm = match alpm_initialize(&rootdir, &dbpath) {
+        Ok(a) => a,
+        Err(e) => {
+            pm_printf!(
+                LOG_ERROR,
+                "failed to initialize alpm library:\n(root: {}, dbpath: {})\n{}\n",
+                rootdir,
+                dbpath,
+                e.strerror()
+            );
+            if e == libalpm_rs::error::Error::DbVersion {
+                eprintln!("try running pacman-db-upgrade");
+            }
+            return -1;
+        }
+    };
+    let handle = alpm.handle.clone();
+    c.alpm = Some(alpm);
+
+    // cb_log
+    *handle.logcb.borrow_mut() = Some(Box::new(|level, msg| {
+        if !msg.is_empty() {
+            crate::util::pm_printf(level, format_args!("{msg}"));
+        }
+    }));
+    // cb_event (ALPM_EVENT_DATABASE_MISSING)
+    let (op, op_s_sync) = (c.op, c.op_s_sync);
+    *handle.eventcb.borrow_mut() = Some(Box::new(move |e| match e {
+        libalpm_rs::handle::Event::DatabaseMissing { dbname } => {
+            if op_s_sync == 0 {
+                pm_printf!(
+                    LOG_WARNING,
+                    "database file for '{}' does not exist (use '{}' to download)\n",
+                    dbname,
+                    if op == PM_OP_FILES { "-Fy" } else { "-Sy" }
+                );
+            }
+        }
+    }));
+
+    if c.op == PM_OP_FILES {
+        handle.set_dbext(".files");
+    }
+
+    let logfile = c.logfile.clone().unwrap();
+    if handle.set_logfile(&logfile) != 0 {
+        pm_printf!(
+            LOG_ERROR,
+            "problem setting logfile '{}' ({})\n",
+            logfile,
+            handle.errno().map_or("unexpected error", |e| e.strerror())
+        );
+        return -1;
+    }
+    // Set GnuPG's home directory. This is not relative to rootdir, even if rootdir is defined.
+    let gpgdir = c.gpgdir.clone().unwrap();
+    if handle.set_gpgdir(&gpgdir) != 0 {
+        pm_printf!(
+            LOG_ERROR,
+            "problem setting gpgdir '{}' ({})\n",
+            gpgdir,
+            handle.errno().map_or("unexpected error", |e| e.strerror())
+        );
+        return -1;
+    }
+    // add hook directories 1-by-1 to avoid overwriting the system directory
+    for d in c.hookdirs.clone() {
+        if handle.add_hookdir(&d) != 0 {
+            pm_printf!(
+                LOG_ERROR,
+                "problem adding hookdir '{}' ({})\n",
+                d,
+                handle.errno().map_or("unexpected error", |e| e.strerror())
+            );
+            return -1;
+        }
+    }
+    handle.set_cachedirs(&c.cachedirs.clone());
+    {
+        let mut o = handle.opts.borrow_mut();
+        o.overwrite_files = c.overwrite_files.clone();
+        o.siglevel = c.siglevel;
+        o.local_file_siglevel = c.localfilesiglevel;
+        o.remote_file_siglevel = c.remotefilesiglevel;
+    }
+    for i in 0..c.repos.len() {
+        register_repo(c, i);
+    }
+    {
+        let mut o = handle.opts.borrow_mut();
+        o.architectures = c.architectures.clone();
+        o.checkspace = c.checkspace;
+        o.usesyslog = c.usesyslog;
+    }
+    // alpm_option_set_sandboxuser
+    if let Some(user) = c.sandboxuser.clone() {
+        let cu = std::ffi::CString::new(user.clone()).unwrap_or_default();
+        // SAFETY: valid C string
+        if unsafe { libc::getpwnam(cu.as_ptr()) }.is_null() {
+            libalpm_rs::alpm_log!(handle, LOG_DEBUG, "'sandboxuser' ({}) does not exist", user);
+            pm_printf!(
+                LOG_ERROR,
+                "problem setting DownloadUser '{}' (user does not exist)\n",
+                user
+            );
+            return 1;
+        }
+        libalpm_rs::alpm_log!(handle, LOG_DEBUG, "option 'sandboxuser' = {}\n", user);
+        handle.opts.borrow_mut().sandboxuser = Some(user);
+    }
+    {
+        let mut o = handle.opts.borrow_mut();
+        o.disable_sandbox_filesystem = c.disable_sandbox_filesystem;
+        o.disable_sandbox_syscalls = c.disable_sandbox_syscalls;
+        o.ignorepkg = c.ignorepkg.clone();
+        o.ignoregroup = c.ignoregrp.clone();
+        o.noupgrade = c.noupgrade.clone();
+        o.noextract = c.noextract.clone();
+        o.disable_dl_timeout = c.disable_dl_timeout;
+        o.parallel_downloads = c.parallel_downloads;
+    }
+    for entry in c.assumeinstalled.clone() {
+        let dep = libalpm_rs::deps::dep_from_string(&entry);
+        pm_printf!(
+            LOG_DEBUG,
+            "parsed assume installed: {} {}\n",
+            dep.name,
+            dep.version.as_deref().unwrap_or("(null)")
+        );
+        if handle.add_assumeinstalled(&dep) != 0 {
+            pm_printf!(
+                LOG_ERROR,
+                "Failed to pass {} entry to libalpm",
+                "assume-installed"
+            );
+            return -1;
+        }
+    }
+    0
+}
+
+/// parseconfig: parse a configuration file, apply defaults and set up libalpm
+pub fn parseconfig(c: &mut Config, file: &str) -> i32 {
+    let ret = parseconfigfile(c, file);
+    if ret != 0 {
+        return ret;
+    }
+    let ret = setdefaults(c);
+    if ret != 0 {
+        return ret;
+    }
+    pm_printf!(LOG_DEBUG, "config: finished parsing {}\n", file);
+    let ret = setup_libalpm(c);
+    if ret != 0 {
+        return ret;
+    }
+    c.repos.clear();
+    ret
 }

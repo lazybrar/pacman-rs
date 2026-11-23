@@ -52,3 +52,18 @@ pub fn resolve_path(path: &str, option: &str) -> Option<String> {
         }
     }
 }
+
+/// Write to stdout, ignoring errors (a closed pipe must not panic).
+#[macro_export]
+macro_rules! pr {
+    ($($a:tt)*) => {{
+        use std::io::Write;
+        let _ = write!(std::io::stdout().lock(), $($a)*);
+    }};
+}
+
+/// fflush(stdout)
+pub fn flush_stdout() {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+}

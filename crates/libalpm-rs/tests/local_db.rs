@@ -62,7 +62,7 @@ fn every_field() {
     );
     put(&r, "full-1:2.0-3", "install", "post_install() { :; }\n");
     put(&r, "full-1:2.0-3", "changelog", "log\n");
-    let (mut db, logs) = open(r.to_str().unwrap());
+    let (db, logs) = open(r.to_str().unwrap());
     let p = db.get_pkg("full").unwrap();
     assert_eq!((p.name.as_str(), p.version.as_str()), ("full", "1:2.0-3"));
     let d = p.desc();
@@ -132,7 +132,7 @@ fn groups_and_lookup() {
         );
         put(&r, &format!("{n}-1-1"), "files", "%FILES%\n\n");
     }
-    let (mut db, _) = open(r.to_str().unwrap());
+    let (db, _) = open(r.to_str().unwrap());
     let names: Vec<_> = db
         .get_pkgcache()
         .unwrap()
@@ -208,7 +208,7 @@ fn malformed_entries() {
     put(&r, "-lead-1-1", "desc", "");
     put(&r, "dupe-1-1", "desc", "");
     put(&r, "dupe-2-1", "desc", "");
-    let (mut db, logs) = open(r.to_str().unwrap());
+    let (db, logs) = open(r.to_str().unwrap());
     let names: Vec<_> = db
         .get_pkgcache()
         .unwrap()
@@ -326,7 +326,7 @@ fn live_database_matches_pacman() {
         eprintln!("skip: no live pacman database");
         return;
     }
-    let (mut db, logs) = open(live);
+    let (db, logs) = open(live);
     let out = Command::new("pacman")
         .arg("-Q")
         .env("LC_ALL", "C")

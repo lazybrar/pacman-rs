@@ -1,5 +1,7 @@
+pub mod alpm;
 pub mod archive;
 pub mod backup;
+pub mod base64;
 pub mod be_local;
 pub mod be_package;
 pub mod be_sync;
@@ -12,5 +14,8 @@ pub mod group;
 pub mod handle;
 pub mod log;
 pub mod package;
+pub mod regex;
+pub mod signing;
+pub mod sync;
 pub mod util;
 pub mod version;

@@ -168,6 +168,52 @@ pub fn strerror(e: &std::io::Error) -> String {
     }
 }
 
+/// _alpm_fnmatch_patterns: last matching pattern wins; 0 match, 1 inverted match, -1 no match
+pub fn fnmatch_patterns(patterns: &[String], string: &str) -> i32 {
+    for p in patterns.iter().rev() {
+        let inverted = p.starts_with('!');
+        let pat = if inverted || p.starts_with('\\') {
+            &p[1..]
+        } else {
+            p.as_str()
+        };
+        if fnmatch(pat, string) == 0 {
+            return inverted as i32;
+        }
+    }
+    -1
+}
+
+/// hex_representation
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn digest_file<D: sha2::Digest>(path: &str) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut d = D::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = f.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        d.update(&buf[..n]);
+    }
+    Some(hex(&d.finalize()))
+}
+
+/// alpm_compute_md5sum
+pub fn compute_md5sum(path: &str) -> Option<String> {
+    digest_file::<md5::Md5>(path)
+}
+
+/// alpm_compute_sha256sum
+pub fn compute_sha256sum(path: &str) -> Option<String> {
+    digest_file::<sha2::Sha256>(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

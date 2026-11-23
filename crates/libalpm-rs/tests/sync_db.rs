@@ -114,7 +114,7 @@ fn all_filters_and_fields() {
         )
         .unwrap();
         let (h, logs, _) = handle(r.to_str().unwrap(), ".db");
-        let mut db = db_register_sync(&h, "test", 0);
+        let db = db_register_sync(&h, "test", 0);
         assert_eq!(db.get_valid(), 0);
         let names: Vec<_> = db
             .get_pkgcache()
@@ -190,7 +190,7 @@ fn files_db_extension() {
     )
     .unwrap();
     let (h, _, _) = handle(r.to_str().unwrap(), ".files");
-    let mut db = db_register_sync(&h, "test", 0);
+    let db = db_register_sync(&h, "test", 0);
     assert!(db.path().ends_with("sync/test.files"));
     let bar = db.get_pkg("bar").unwrap();
     assert_eq!(bar.files().files[1].name, "usr/bin/bar");
@@ -200,7 +200,7 @@ fn files_db_extension() {
 fn missing_db_raises_event() {
     let r = root("missing");
     let (h, _, ev) = handle(r.to_str().unwrap(), ".db");
-    let mut db = db_register_sync(&h, "nope", 0);
+    let db = db_register_sync(&h, "nope", 0);
     assert_eq!(
         *ev.borrow(),
         [Event::DatabaseMissing {
@@ -216,7 +216,7 @@ fn load(name: &str, entries: &[(&str, &str)]) -> (Result<Vec<String>, Error>, Ve
     let r = root(name);
     std::fs::write(r.join("sync/t.db"), compress("gz", &tar(entries))).unwrap();
     let (h, logs, _) = handle(r.to_str().unwrap(), ".db");
-    let mut db = db_register_sync(&h, "t", 0);
+    let db = db_register_sync(&h, "t", 0);
     let res = db
         .get_pkgcache()
         .map(|v| v.iter().map(|p| p.name.clone()).collect());
@@ -300,14 +300,18 @@ fn malformed() {
     let r = root("garbage");
     std::fs::write(r.join("sync/t.db"), vec![0x41u8; 2048]).unwrap();
     let (h, logs, _) = handle(r.to_str().unwrap(), ".db");
-    let mut db = db_register_sync(&h, "t", 0);
-    assert_eq!(db.get_pkgcache().err(), Some(Error::Libarchive));
-    assert!(errs(&logs)[0].starts_with("could not read db 't' ("));
+    let db = db_register_sync(&h, "t", 0);
+    assert_eq!(db.get_pkgcache().err(), Some(Error::DbOpen));
+    assert!(
+        errs(&logs)[0].starts_with("could not open file "),
+        "{:?}",
+        errs(&logs)
+    );
     // empty file: no packages
     let r = root("empty");
     std::fs::write(r.join("sync/t.db"), b"").unwrap();
     let (h, _, _) = handle(r.to_str().unwrap(), ".db");
-    let mut db = db_register_sync(&h, "t", 0);
+    let db = db_register_sync(&h, "t", 0);
     assert_eq!(db.get_pkgcache().unwrap().len(), 0);
 }
 
@@ -354,7 +358,7 @@ fn live_sync_dbs_match_pacman() {
     let (h, logs, _) = handle("/var/lib/pacman/", ".db");
     let mut seed = 0x9E3779B97F4A7C15u64;
     for repo in repos {
-        let mut db = db_register_sync(&h, &repo, 0);
+        let db = db_register_sync(&h, &repo, 0);
         assert_eq!(db.get_valid(), 0);
         let got: Vec<String> = db
             .get_pkgcache()

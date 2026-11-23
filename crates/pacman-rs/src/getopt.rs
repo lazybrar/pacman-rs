@@ -1,8 +1,16 @@
 //! GNU getopt_long (with argument permutation), message texts as in glibc.
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Arg {
+    No,
+    Required,
+    /// only `--name=value`
+    Optional,
+}
+
 pub struct LongOpt {
     pub name: &'static str,
-    pub has_arg: bool,
+    pub has_arg: Arg,
     pub val: char,
 }
 
@@ -141,8 +149,9 @@ impl<'a> Getopt<'a> {
         }
         let o = cands[0];
         match (o.has_arg, inline) {
-            (true, Some(v)) => (o.val, Some(v)),
-            (true, None) => {
+            (Arg::Required | Arg::Optional, Some(v)) => (o.val, Some(v)),
+            (Arg::Optional, None) => (o.val, None),
+            (Arg::Required, None) => {
                 if self.i < self.args.len() {
                     self.i += 1;
                     (o.val, Some(self.args[self.i - 1].clone()))
@@ -151,11 +160,11 @@ impl<'a> Getopt<'a> {
                     ('?', None)
                 }
             }
-            (false, Some(_)) => {
+            (Arg::No, Some(_)) => {
                 self.err(format!("option '--{}' doesn't allow an argument", o.name));
                 ('?', None)
             }
-            (false, None) => (o.val, None),
+            (Arg::No, None) => (o.val, None),
         }
     }
 }

@@ -367,3 +367,57 @@ pub fn pkg_changelog_read_all(pkg: &Pkg) -> Option<Vec<u8>> {
     }
     None
 }
+
+/// _alpm_pkg_validate_internal for a level without package signature requirements.
+fn pkg_validate_unsigned(handle: &Handle, pkgfile: &str, level: i32) -> Result<i32, Error> {
+    handle.pm_errno.set(None);
+    if pkgfile.is_empty() {
+        return handle.err(Error::WrongArgs);
+    }
+    // attempt to access the package file, ensure it exists
+    let c = std::ffi::CString::new(pkgfile).map_err(|_| Error::WrongArgs)?;
+    // SAFETY: valid C string
+    if unsafe {
+        libc::faccessat(
+            libc::AT_FDCWD,
+            c.as_ptr(),
+            libc::R_OK,
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    } != 0
+    {
+        let e = std::io::Error::last_os_error();
+        alpm_log!(
+            handle,
+            LOG_DEBUG,
+            "\"{}\" is not readable: {}\n",
+            pkgfile,
+            strerror(&e)
+        );
+        return handle.err(match e.raw_os_error() {
+            Some(libc::ENOENT) => Error::PkgNotFound,
+            Some(libc::EACCES) => Error::Badperms,
+            _ => Error::PkgOpen,
+        });
+    }
+    if level & crate::consts::SIG_PACKAGE != 0 {
+        // shortcut: signing.c is not ported, so a package that must be signature-checked cannot be loaded
+        alpm_log!(
+            handle,
+            LOG_ERROR,
+            "package signature verification is not implemented yet\n"
+        );
+        return handle.err(Error::PkgInvalidSig);
+    }
+    Ok(PKG_VALIDATION_NONE)
+}
+
+/// alpm_pkg_load (for levels that do not need signature verification)
+pub fn pkg_load(handle: &Rc<Handle>, filename: &str, full: bool, level: i32) -> Result<Pkg, Error> {
+    let validation = pkg_validate_unsigned(handle, filename, level)?;
+    let mut pkg = pkg_load_internal(handle, filename, full)?;
+    if let Some(d) = pkg.desc.get_mut() {
+        d.validation = validation;
+    }
+    Ok(pkg)
+}

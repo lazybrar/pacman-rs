@@ -18,6 +18,7 @@ use std::rc::Rc;
 /// Everything gathered about a package over its archive entries (desc, depends, files).
 #[derive(Default)]
 struct Building {
+    dbname: String,
     name: String,
     version: String,
     name_hash: u64,
@@ -194,6 +195,7 @@ fn archive_error(e: &std::io::Error) -> String {
 
 /// Turn gathered data into a `Pkg` (the sync `get_validation` op is computed here).
 fn finish(h: &Rc<Handle>, b: Building) -> Pkg {
+    let dbname = b.dbname.clone();
     let mut p = Pkg::new(
         Rc::clone(h),
         b.name,
@@ -201,6 +203,7 @@ fn finish(h: &Rc<Handle>, b: Building) -> Pkg {
         b.name_hash,
         PkgFrom::SyncDb,
     );
+    p.dbname = Some(dbname);
     p.filename = b.filename;
     p.md5sum = b.md5sum;
     p.sha256sum = b.sha256sum;
@@ -298,6 +301,7 @@ fn load_pkg_for_entry(
                 db.treename
             );
             pkgs.push(Building {
+                dbname: db.treename.clone(),
                 name: pkgname.clone(),
                 version: pkgver,
                 name_hash: hash,

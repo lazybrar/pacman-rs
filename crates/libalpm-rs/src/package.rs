@@ -88,6 +88,8 @@ pub struct Pkg {
     pub origin: PkgFrom,
     /// origin_data.file for packages loaded from a file
     pub file: Option<String>,
+    /// name of the database the package comes from (origin_data.db)
+    pub dbname: Option<String>,
     pub filename: Option<String>,
     pub md5sum: Option<String>,
     pub sha256sum: Option<String>,
@@ -118,6 +120,7 @@ impl Pkg {
             name_hash,
             origin,
             file: None,
+            dbname: None,
             filename: None,
             md5sum: None,
             sha256sum: None,
@@ -250,4 +253,52 @@ pub fn pkg_check_meta(pkg: &Pkg) -> i32 {
         epkgmeta("package name and version too long");
     }
     error_found
+}
+
+/// alpm_pkg_should_ignore
+pub fn pkg_should_ignore(handle: &Handle, pkg: &Pkg) -> bool {
+    let o = handle.opts.borrow();
+    // first see if the package is ignored
+    if o.ignorepkg.iter().any(|p| fnmatch(p, &pkg.name) == 0) {
+        return true;
+    }
+    // next see if the package is in a group that is ignored
+    pkg.desc()
+        .groups
+        .iter()
+        .any(|g| o.ignoregroup.iter().any(|p| fnmatch(p, g) == 0))
+}
+
+/// find_requiredby
+fn find_requiredby(pkg: &Pkg, db: &crate::db::Db, reqs: &mut Vec<String>, optional: bool) {
+    for cachepkg in db.get_pkgcache().unwrap_or(&[]) {
+        let list = if optional {
+            &cachepkg.desc().optdepends
+        } else {
+            &cachepkg.desc().depends
+        };
+        for dep in list {
+            if crate::deps::depcmp(pkg, dep) && !reqs.contains(&cachepkg.name) {
+                reqs.push(cachepkg.name.clone());
+            }
+        }
+    }
+}
+
+/// compute_requiredby (alpm_pkg_compute_requiredby / alpm_pkg_compute_optionalfor)
+pub fn compute_requiredby(alpm: &crate::alpm::Alpm, pkg: &Pkg, optional: bool) -> Vec<String> {
+    alpm.handle.pm_errno.set(None);
+    let mut reqs = Vec::new();
+    if pkg.origin == PkgFrom::File {
+        // The sane option; search locally for things that require this.
+        find_requiredby(pkg, &alpm.localdb, &mut reqs, optional);
+    } else if pkg.origin == PkgFrom::LocalDb {
+        find_requiredby(pkg, &alpm.localdb, &mut reqs, optional);
+    } else {
+        for db in &alpm.syncdbs {
+            find_requiredby(pkg, db, &mut reqs, optional);
+        }
+        reqs.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    }
+    reqs
 }

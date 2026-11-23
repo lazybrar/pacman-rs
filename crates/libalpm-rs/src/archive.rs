@@ -79,6 +79,33 @@ pub fn decompress_bytes(data: Vec<u8>) -> std::io::Result<Vec<u8>> {
     Ok(out)
 }
 
+/// libarchive's tar bidder: an empty-archive (zero) block or a header with a correct checksum
+fn valid_tar_header(h: &[u8]) -> bool {
+    if h.len() < 512 {
+        return false;
+    }
+    if h[..512].iter().all(|&c| c == 0) {
+        return true;
+    }
+    let field = &h[148..156];
+    let digits: String = field
+        .iter()
+        .skip_while(|&&c| c == b' ')
+        .take_while(|&&c| (b'0'..=b'7').contains(&c))
+        .map(|&c| c as char)
+        .collect();
+    let Ok(want) = u64::from_str_radix(&digits, 8) else {
+        return false;
+    };
+    let (mut unsigned, mut signed) = (0u64, 0i64);
+    for (i, &c) in h[..512].iter().enumerate() {
+        let c = if (148..156).contains(&i) { b' ' } else { c };
+        unsigned += c as u64;
+        signed += c as i8 as i64;
+    }
+    want == unsigned || want as i64 == signed
+}
+
 /// _alpm_open_archive: on failure logs like upstream and records `error` in pm_errno.
 pub fn open_archive(handle: &Handle, path: &str, error: Error) -> Result<Archive, OpenError> {
     alpm_log!(handle, crate::log::LOG_DEBUG, "opening archive {}\n", path);
@@ -111,10 +138,32 @@ pub fn open_archive(handle: &Handle, path: &str, error: Error) -> Result<Archive
         Err(e) => return fail("open", &e),
     };
     let filter = detect(head);
-    let r = match wrap_filter(filter, br) {
+    let mut r = match wrap_filter(filter, br) {
         Ok(r) => r,
         Err(e) => return fail("open", &e),
     };
+    // libarchive bids on the format when the archive is opened: peek at the first tar header block
+    let mut head = vec![0u8; 512];
+    let mut n = 0;
+    while n < head.len() {
+        match r.read(&mut head[n..]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return fail("open", &e),
+        }
+    }
+    head.truncate(n);
+    if !head.is_empty() && !valid_tar_header(&head) {
+        return fail(
+            "open",
+            &std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unrecognized archive format",
+            ),
+        );
+    }
+    let r: Box<dyn Read> = Box::new(std::io::Cursor::new(head).chain(r));
     Ok(Archive {
         filter,
         size,
@@ -192,6 +241,14 @@ pub struct MtreeEntry {
     pub size: i64,
     /// full mode: type bits | permission bits
     pub mode: u32,
+    pub uid: i64,
+    pub gid: i64,
+    /// mtime in whole seconds
+    pub mtime: i64,
+    /// symlink target
+    pub link: Option<String>,
+    /// sha256digest keyword as 32 raw bytes (zeros when absent, like libarchive's zeroed digest)
+    pub sha256: [u8; 32],
 }
 
 pub const AE_IFDIR: u32 = 0o040000;
@@ -310,6 +367,29 @@ pub fn read_mtree(data: &[u8]) -> Result<Vec<MtreeEntry>, String> {
             filetype,
             size,
             mode: filetype | (perm & 0o7777),
+            uid: kw.get("uid").and_then(|v| v.parse().ok()).unwrap_or(0),
+            gid: kw.get("gid").and_then(|v| v.parse().ok()).unwrap_or(0),
+            mtime: kw
+                .get("time")
+                .and_then(|v| v.split('.').next()?.parse().ok())
+                .unwrap_or(0),
+            link: kw
+                .get("link")
+                .map(|l| String::from_utf8_lossy(&mtree_unescape(l.as_bytes())).into_owned()),
+            sha256: kw
+                .get("sha256digest")
+                .or_else(|| kw.get("sha256"))
+                .map(|h| {
+                    let mut out = [0u8; 32];
+                    for (i, o) in out.iter_mut().enumerate() {
+                        *o = h
+                            .get(2 * i..2 * i + 2)
+                            .and_then(|x| u8::from_str_radix(x, 16).ok())
+                            .unwrap_or(0);
+                    }
+                    out
+                })
+                .unwrap_or([0; 32]),
         });
     }
     Ok(out)

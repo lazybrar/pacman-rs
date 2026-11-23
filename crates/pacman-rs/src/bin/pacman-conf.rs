@@ -1,6 +1,6 @@
 //! Port of src/pacman/pacman-conf.c.
 use pacman_rs::conf::*;
-use pacman_rs::getopt::{Getopt, LongOpt};
+use pacman_rs::getopt::{Arg, Getopt, LongOpt};
 use std::io::Write;
 
 const MYNAME: &str = "pacman-conf";
@@ -271,42 +271,42 @@ fn main() {
     let long = [
         LongOpt {
             name: "config",
-            has_arg: true,
+            has_arg: Arg::Required,
             val: 'c',
         },
         LongOpt {
             name: "rootdir",
-            has_arg: true,
+            has_arg: Arg::Required,
             val: 'R',
         },
         LongOpt {
             name: "sysroot",
-            has_arg: true,
+            has_arg: Arg::Required,
             val: 'S',
         },
         LongOpt {
             name: "repo",
-            has_arg: true,
+            has_arg: Arg::Required,
             val: 'r',
         },
         LongOpt {
             name: "repo-list",
-            has_arg: false,
+            has_arg: Arg::No,
             val: 'l',
         },
         LongOpt {
             name: "verbose",
-            has_arg: false,
+            has_arg: Arg::No,
             val: 'v',
         },
         LongOpt {
             name: "help",
-            has_arg: false,
+            has_arg: Arg::No,
             val: 'h',
         },
         LongOpt {
             name: "version",
-            has_arg: false,
+            has_arg: Arg::No,
             val: 'V',
         },
     ];

@@ -280,7 +280,7 @@ fn invalid_packages() {
     std::fs::write(&g, vec![b'A'; 4096]).unwrap();
     assert_eq!(
         pkg_load_internal(&h, g.to_str().unwrap(), true).err(),
-        Some(Error::Libarchive)
+        Some(Error::PkgOpen)
     );
 }
 
