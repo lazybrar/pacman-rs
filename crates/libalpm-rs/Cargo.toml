@@ -5,3 +5,9 @@ edition = "2024"
 
 [dependencies]
 libc = "0.2.186"
+tar = "0.4.46"
+flate2 = "1.1.11"
+zstd = "0.13.3"
+liblzma = "0.4.9"
+bzip2 = "0.6.1"
+lz4_flex = "0.13.1"

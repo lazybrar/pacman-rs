@@ -13,7 +13,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | base64.c | base64.rs | todo |
 | be_local.c | be_local.rs | partial (read side; write, mtree todo) |
 | be_package.c | be_package.rs | todo |
-| be_sync.c | be_sync.rs | todo |
+| be_sync.c | be_sync.rs | partial (read side; update, db signature checks todo) |
 | conflict.c | conflict.rs | todo |
 | db.c | db.rs | partial (read side; search, sync registration todo) |
 | deps.c | deps.rs | partial (alpm_dep_from_string, alpm_dep_compute_string) |
@@ -36,7 +36,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | signing.c | signing.rs | todo |
 | sync.c | sync.rs | todo |
 | trans.c | trans.rs | todo |
-| util.c | util.rs | partial (CFile/fgets, splitname, hash_sdbm, parsedate, strtoofft, fnmatch) |
+| util.c | util.rs, archive.rs | partial (archive open/fgets (tar+gz/bz2/xz/zst/lz4), CFile/fgets, splitname, hash_sdbm, parsedate, strtoofft, fnmatch) |
 | version.c | version.rs | done |
 
 ## src/pacman -> pacman-rs

@@ -38,6 +38,8 @@ pub struct Db {
     pub treename: String,
     pub status: Cell<u32>,
     pub usage: i32,
+    /// signature verification level (sync databases)
+    pub siglevel: i32,
     path: OnceCell<String>,
     ops: Box<dyn DbOps>,
     pkgcache: Option<Vec<Pkg>>,
@@ -52,6 +54,7 @@ impl Db {
             treename: treename.to_string(),
             status: Cell::new(if is_local { DB_STATUS_LOCAL } else { 0 }),
             usage: crate::consts::DB_USAGE_ALL,
+            siglevel: 0,
             path: OnceCell::new(),
             ops,
             pkgcache: None,

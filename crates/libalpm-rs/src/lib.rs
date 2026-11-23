@@ -1,5 +1,7 @@
+pub mod archive;
 pub mod backup;
 pub mod be_local;
+pub mod be_sync;
 pub mod consts;
 pub mod db;
 pub mod deps;
