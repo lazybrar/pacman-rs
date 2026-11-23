@@ -10,7 +10,7 @@ Not affiliated with Arch Linux or the pacman project. Report bugs here, not to t
 
 ## Works today
 
-- `pacman-rs -Q...`, `-Ss`, `-Si`, `-Sl`, `-Sg`, `-T`
+- `pacman-rs -Q...`, `-Ss`, `-Si`, `-Sl`, `-Sg`, `-T`, `-F` (`-Fl`, `-Fx`, `--machinereadable`)
 - `pacman-conf`, `vercmp`
 
 Tests diff stdout, stderr and exit codes against the system's pacman (`LC_ALL=C`).
