@@ -10,3 +10,5 @@ libc = "0.2.186"
 [dev-dependencies]
 tar = "0.4.46"
 flate2 = "1.1.11"
+zstd = "0.13.3"
+sha2 = "0.10.9"

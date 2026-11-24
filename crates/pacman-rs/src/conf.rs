@@ -1005,13 +1005,12 @@ fn setup_libalpm(c: &mut Config) -> i32 {
     c.alpm = Some(alpm);
 
     // cb_log
-    *handle.logcb.borrow_mut() = Some(Box::new(|level, msg| {
-        if !msg.is_empty() {
-            crate::util::pm_printf(level, format_args!("{msg}"));
-        }
-    }));
-    // cb_event (ALPM_EVENT_DATABASE_MISSING)
+    *handle.logcb.borrow_mut() = Some(Box::new(crate::callback::cb_log));
+    // cb_download
+    *handle.dlcb.borrow_mut() = Some(Box::new(crate::callback::cb_download));
+    // cb_event
     let (op, op_s_sync) = (c.op, c.op_s_sync);
+    let (colon, nocolor) = (c.colstr.colon, c.colstr.nocolor);
     *handle.eventcb.borrow_mut() = Some(Box::new(move |e| match e {
         libalpm_rs::handle::Event::DatabaseMissing { dbname } => {
             if op_s_sync == 0 {
@@ -1023,6 +1022,7 @@ fn setup_libalpm(c: &mut Config) -> i32 {
                 );
             }
         }
+        e => crate::callback::cb_event(e, colon, nocolor),
     }));
 
     if c.op == PM_OP_FILES {
@@ -1072,6 +1072,23 @@ fn setup_libalpm(c: &mut Config) -> i32 {
     }
     for i in 0..c.repos.len() {
         register_repo(c, i);
+    }
+    if c.xfercommand.is_some() {
+        let weak = std::rc::Rc::downgrade(&handle);
+        let (argv, user) = (c.xfercommand_argv.clone(), c.sandboxuser.clone());
+        *handle.fetchcb.borrow_mut() = Some(Box::new(move |url, localpath, force| {
+            match weak.upgrade() {
+                Some(h) => crate::callback::download_with_xfercommand(
+                    &argv,
+                    user.as_deref(),
+                    &h,
+                    url,
+                    localpath,
+                    force,
+                ),
+                None => -1,
+            }
+        }));
     }
     {
         let mut o = handle.opts.borrow_mut();

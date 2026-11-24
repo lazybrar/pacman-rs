@@ -1094,13 +1094,21 @@ pub fn main() -> ! {
         list_display(&config, Some("Targets   :"), &pm_targets, 0);
     }
 
-    // Log command line: only for operations that need root, which are not implemented
+    // Log command line
+    if crate::util_pacman::needs_root(&config) {
+        config
+            .alpm
+            .as_ref()
+            .unwrap()
+            .handle
+            .logaction("PACMAN", format_args!("Running '{}'\n", args.join(" ")));
+    }
     // start the requested operation
     let ret = match config.op {
         PM_OP_QUERY => crate::query::pacman_query(&config, &pm_targets),
-        PM_OP_SYNC => crate::sync::pacman_sync(&config, &pm_targets),
+        PM_OP_SYNC => crate::sync::pacman_sync(&mut config, &pm_targets),
         PM_OP_DEPTEST => crate::deptest::pacman_deptest(&config, &pm_targets),
-        PM_OP_FILES => crate::files::pacman_files(&config, &pm_targets),
+        PM_OP_FILES => crate::files::pacman_files(&mut config, &pm_targets),
         PM_OP_DATABASE | PM_OP_REMOVE | PM_OP_UPGRADE => crate::not_implemented("this operation"),
         _ => {
             pm_printf!(LOG_ERROR, "no operation specified (use -h for help)\n");

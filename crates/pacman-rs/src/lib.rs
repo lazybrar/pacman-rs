@@ -1,3 +1,4 @@
+pub mod callback;
 pub mod check;
 pub mod conf;
 pub mod deptest;

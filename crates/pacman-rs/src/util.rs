@@ -14,10 +14,10 @@ const BOLDRED: &str = "\x1b[1;31m";
 const BOLDYELLOW: &str = "\x1b[1;33m";
 const NOCOLOR: &str = "\x1b[0m";
 
-/// pm_printf / pm_vfprintf (stderr, C locale).
-pub fn pm_printf(level: u32, args: std::fmt::Arguments) {
+/// pm_vasprintf: the message with its level prefix (None when the level is masked out)
+pub fn pm_sprintf(level: u32, args: std::fmt::Arguments) -> Option<String> {
     if LOGMASK.load(Ordering::Relaxed) & level == 0 {
-        return;
+        return None;
     }
     let col = COLORS.load(Ordering::Relaxed);
     let (c, n) = if col { (true, NOCOLOR) } else { (false, "") };
@@ -28,7 +28,14 @@ pub fn pm_printf(level: u32, args: std::fmt::Arguments) {
         8 => "function: ".to_string(),
         _ => String::new(),
     };
-    eprint!("{prefix}{args}");
+    Some(format!("{prefix}{args}"))
+}
+
+/// pm_printf / pm_vfprintf (stderr, C locale).
+pub fn pm_printf(level: u32, args: std::fmt::Arguments) {
+    if let Some(s) = pm_sprintf(level, args) {
+        eprint!("{s}");
+    }
 }
 
 #[macro_export]

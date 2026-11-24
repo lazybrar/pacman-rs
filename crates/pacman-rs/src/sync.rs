@@ -1,11 +1,11 @@
-//! Port of src/pacman/sync.c, read-only operations (-Ss, -Sg, -Si, -Sl). Everything that would
-//! install or download (transactions, -Sy, -Sc) is not implemented and refuses to run.
+//! Port of src/pacman/sync.c: -Ss, -Sg, -Si, -Sl, database synchronisation (-Sy) and download-only package
+//! fetches (-Sw). Installing (transactions) and -Sc are not implemented and refuse to run.
 use crate::conf::*;
 use crate::package::{dump_pkg_full, dump_pkg_search, print_installed};
 use crate::pm_printf;
 use crate::pr;
 use crate::util::LOG_ERROR;
-use crate::util_pacman::check_syncdbs;
+use crate::util_pacman::{check_syncdbs, colon_printf};
 use libalpm_rs::db::Db;
 
 /// sync_search
@@ -166,8 +166,100 @@ fn sync_list(cfg: &Config, syncs: &[Db], targets: &[String]) -> i32 {
     ret
 }
 
+/// sync_syncdbs (util.c): refresh the sync databases; false on failure
+pub fn sync_syncdbs(cfg: &mut Config, level: i32) -> bool {
+    let force = level >= 2;
+    let alpm = cfg.alpm.as_mut().unwrap();
+    let handle = alpm.handle.clone();
+    let ret = libalpm_rs::be_sync::db_update(&handle, &mut alpm.syncdbs, force);
+    if ret < 0 {
+        pm_printf!(
+            LOG_ERROR,
+            "failed to synchronize all databases ({})\n",
+            handle.errno().map_or("unexpected error", |e| e.strerror())
+        );
+    }
+    ret >= 0
+}
+
+/// the -Sw path: resolve the targets and their dependencies and download the packages. This stands in
+/// for sync_trans/sync_prepare_execute with the DOWNLOADONLY flag.
+/// shortcut: no transaction (T13): no conflict/ignore/replaces handling, no prompts or summary, and the
+/// downloaded files are not validated (check_validity); groups and `-u` are not handled.
+fn sync_download_only(cfg: &Config, targets: &[String]) -> i32 {
+    use libalpm_rs::deps::{find_dbs_satisfier, resolvedeps};
+    use libalpm_rs::package::Pkg;
+    let alpm = cfg.alpm.as_ref().unwrap();
+    let handle = &alpm.handle;
+    if handle.lock() != 0 {
+        pm_printf!(
+            LOG_ERROR,
+            "failed to init transaction (unable to lock database)\n"
+        );
+        pm_printf!(
+            LOG_ERROR,
+            "could not lock database: {}\n",
+            libalpm_rs::util::strerror(&std::io::Error::last_os_error())
+        );
+        return 1;
+    }
+    let mut retval = 0;
+    let mut add: Vec<&Pkg> = Vec::new();
+    let all: Vec<&Db> = alpm.syncdbs.iter().collect();
+    let local: Vec<&Pkg> = alpm.localdb.get_pkgcache().unwrap_or(&[]).iter().collect();
+    for targ in targets {
+        let (dbs, name): (Vec<&Db>, &str) = match targ.split_once('/') {
+            Some((repo, name)) => match all.iter().find(|d| d.name() == repo) {
+                Some(d) => (vec![*d], name),
+                None => {
+                    pm_printf!(LOG_ERROR, "database not found: {}\n", repo);
+                    retval = 1;
+                    continue;
+                }
+            },
+            None => (all.clone(), targ.as_str()),
+        };
+        match find_dbs_satisfier(alpm, &dbs, name) {
+            Ok(Some(pkg)) => {
+                let mut data = Vec::new();
+                if resolvedeps(alpm, &local, pkg, &[], &mut add, &[], Some(&mut data)) != 0 {
+                    pm_printf!(
+                        LOG_ERROR,
+                        "failed to prepare transaction ({})\n",
+                        handle.errno().map_or("unexpected error", |e| e.strerror())
+                    );
+                    for m in &data {
+                        pm_printf!(
+                            LOG_ERROR,
+                            "{}: unable to satisfy dependency '{}' required by {}\n",
+                            "target",
+                            libalpm_rs::deps::dep_compute_string(&m.depend),
+                            m.target
+                        );
+                    }
+                    retval = 1;
+                }
+            }
+            _ => {
+                pm_printf!(LOG_ERROR, "target not found: {}\n", targ);
+                retval = 1;
+            }
+        }
+    }
+    if retval == 0 && libalpm_rs::sync::download_files(alpm, &add) != 0 {
+        pm_printf!(
+            LOG_ERROR,
+            "failed to commit transaction ({})\n",
+            handle.errno().map_or("unexpected error", |e| e.strerror())
+        );
+        retval = 1;
+    }
+    handle.unlock();
+    retval
+}
+
 /// pacman_sync
-pub fn pacman_sync(cfg: &Config, targets: &[String]) -> i32 {
+pub fn pacman_sync(cfg: &mut Config, targets: &[String]) -> i32 {
     // clean the cache
     if cfg.op_s_clean != 0 {
         return crate::not_implemented("-Sc");
@@ -175,11 +267,20 @@ pub fn pacman_sync(cfg: &Config, targets: &[String]) -> i32 {
     if check_syncdbs(cfg, 1, false) != 0 {
         return 1;
     }
-    let sync_dbs = &cfg.alpm.as_ref().unwrap().syncdbs;
     if cfg.op_s_sync != 0 {
         // grab a fresh package list
-        return crate::not_implemented("-Sy");
+        colon_printf(cfg, "Synchronizing package databases...\n");
+        cfg.alpm
+            .as_ref()
+            .unwrap()
+            .handle
+            .logaction("PACMAN", format_args!("synchronizing package lists\n"));
+        if !sync_syncdbs(cfg, cfg.op_s_sync as i32) {
+            return 1;
+        }
     }
+    let cfg = &*cfg;
+    let sync_dbs = &cfg.alpm.as_ref().unwrap().syncdbs;
     if check_syncdbs(cfg, 1, true) != 0 {
         return 1;
     }
@@ -209,6 +310,9 @@ pub fn pacman_sync(cfg: &Config, targets: &[String]) -> i32 {
             pm_printf!(LOG_ERROR, "no targets specified (use -h for help)\n");
             return 1;
         }
+    }
+    if cfg.op_s_downloadonly && cfg.op_s_upgrade == 0 {
+        return sync_download_only(cfg, targets);
     }
     crate::not_implemented("-S transactions")
 }
