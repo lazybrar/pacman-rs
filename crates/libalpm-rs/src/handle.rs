@@ -25,6 +25,12 @@ pub enum Question<'a> {
         install: bool,
         pkg: &'a crate::package::Pkg,
     },
+    /// alpm_question_import_key_t
+    ImportKey {
+        import: bool,
+        uid: Option<&'a str>,
+        fingerprint: &'a str,
+    },
     /// alpm_question_select_provider_t
     SelectProvider {
         use_index: i32,
@@ -74,6 +80,8 @@ pub struct Handle {
     pub logcb: RefCell<Option<LogCb>>,
     pub eventcb: RefCell<Option<EventCb>>,
     pub questioncb: RefCell<Option<QuestionCb>>,
+    /// handle->known_keys: fingerprints already found in the keyring
+    pub known_keys: RefCell<Vec<String>>,
     /// handle->trans->flags & ALPM_TRANS_FLAG_NODEPVERSION (no transaction is false)
     pub no_dep_version: Cell<bool>,
     /// None is ALPM_ERR_OK
@@ -122,6 +130,7 @@ impl Handle {
             logcb: RefCell::new(None),
             eventcb: RefCell::new(None),
             questioncb: RefCell::new(None),
+            known_keys: RefCell::new(Vec::new()),
             no_dep_version: Cell::new(false),
             pm_errno: Cell::new(None),
             opts: RefCell::new(Options {

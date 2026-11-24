@@ -12,8 +12,8 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | backup.c | backup.rs | done |
 | base64.c | base64.rs | done |
 | be_local.c | be_local.rs | partial (read side; write, mtree todo) |
-| be_package.c | be_package.rs | partial (_alpm_pkg_load_internal, changelog; alpm_pkg_load/validate need signing.c) |
-| be_sync.c | be_sync.rs | partial (read side; update, db signature checks todo) |
+| be_package.c | be_package.rs | partial (_alpm_pkg_load_internal, alpm_pkg_load with signature validation, _alpm_pkg_validate_internal, changelog) |
+| be_sync.c | be_sync.rs | partial (read side incl. db signature checks; update todo) |
 | conflict.c | conflict.rs | todo |
 | db.c | db.rs | partial (read side, search, add_server; unregister/update todo) |
 | deps.c | deps.rs | done (recursedeps adds borrowed packages instead of _alpm_pkg_dup copies; no transaction flags beyond nodepversion) |
@@ -33,7 +33,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | sandbox.c | sandbox.rs | todo |
 | sandbox_fs.c | sandbox_fs.rs | todo |
 | sandbox_syscalls.c | sandbox_syscalls.rs | todo |
-| signing.c | signing.rs | partial (decode_signature, extract_keyid; gpgme verification todo) |
+| signing.c | signing.rs | done (gpgme crate; gpgme_set_locale not called, no binding) |
 | sync.c | sync.rs | partial (alpm_sync_get_new_version; transaction logic todo) |
 | trans.c | trans.rs | todo |
 | util.c | util.rs, archive.rs | partial (archive open/fgets (tar+gz/bz2/xz/zst/lz4), CFile/fgets, splitname, hash_sdbm, parsedate, strtoofft, fnmatch) |
@@ -50,7 +50,7 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | deptest.c | deptest.rs | done |
 | files.c | files.rs | done (-Fy not implemented) |
 | ini.c | ini.rs | done |
-| package.c | package.rs | done (signature display of package files needs gpgme) |
+| package.c | package.rs | done |
 | pacman-conf.c | src/bin/pacman-conf.rs | done |
 | pacman.c | pacman.rs | done (-D -R -U -F and -S transactions refuse with "not implemented yet") |
 | query.c | query.rs | done |

@@ -259,7 +259,9 @@ pub fn dump_pkg_full(cfg: &Config, pkg: &Pkg, extra: bool) {
                 string_display(cfg, Some(&t[T_SIGNATURES]), Some("None"), cols)
             }
             Err(e) => string_display(cfg, Some(&t[T_SIGNATURES]), Some(e.strerror()), cols),
-            Ok(()) => {}
+            Ok(siglist) => {
+                crate::util_pacman::signature_display(cfg, Some(&t[T_SIGNATURES]), &siglist, cols)
+            }
         }
     }
 

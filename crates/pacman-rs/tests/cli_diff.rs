@@ -665,3 +665,78 @@ fn never_creates_db_lock() {
 // PkgFrom is imported for future family filters
 #[allow(dead_code)]
 const _F: Option<PkgFrom> = None;
+
+/// -Qip prints the signature results of a package file: run against a temp COPY of the system keyring
+/// (--gpgdir), never the real one.
+#[test]
+fn qip_signature_display_matches_pacman() {
+    let src = std::path::Path::new("/etc/pacman.d/gnupg");
+    let cache = std::path::Path::new("/var/cache/pacman/pkg");
+    if !std::path::Path::new(SYS).exists() || !src.join("pubring.gpg").exists() || !cache.exists() {
+        eprintln!("skip: no system pacman, keyring or cache");
+        return;
+    }
+    let home = std::env::temp_dir().join(format!("pacman-rs-qip-gnupg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::set_permissions(&home, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    for f in ["pubring.gpg", "trustdb.gpg", "gpg.conf"] {
+        if src.join(f).exists() {
+            std::fs::copy(src.join(f), home.join(f)).unwrap();
+        }
+    }
+    let mut pkgs: Vec<PathBuf> = std::fs::read_dir(cache)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.to_string_lossy().ends_with(".pkg.tar.zst")
+                && PathBuf::from(format!("{}.sig", p.display())).exists()
+        })
+        .collect();
+    pkgs.sort();
+    pkgs.truncate(30);
+    // plus one without a signature file, if any
+    if let Some(p) = std::fs::read_dir(cache)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| {
+            p.to_string_lossy().ends_with(".pkg.tar.zst")
+                && !PathBuf::from(format!("{}.sig", p.display())).exists()
+        })
+    {
+        pkgs.push(p);
+    }
+    let ours = env!("CARGO_BIN_EXE_pacman-rs");
+    let mut bad = Vec::new();
+    for p in &pkgs {
+        for cols in ["200", "60"] {
+            let c = Case {
+                family: "qip-sig",
+                cols: if cols == "200" { "200" } else { "60" },
+                args: s(&[
+                    "--gpgdir",
+                    home.to_str().unwrap(),
+                    "-Qip",
+                    p.to_str().unwrap(),
+                ]),
+            };
+            let (a, b) = (run(ours, &c), run(SYS, &c));
+            if a != b {
+                bad.push(format!(
+                    "{} COLUMNS={cols}: {}",
+                    p.display(),
+                    first_diff(&a.0, &b.0)
+                ));
+            }
+        }
+    }
+    eprintln!("qip-sig: {} cases, {} failed", pkgs.len() * 2, bad.len());
+    let _ = Command::new("gpgconf")
+        .args(["--kill", "all"])
+        .env("GNUPGHOME", &home)
+        .status();
+    let _ = std::fs::remove_dir_all(&home);
+    assert!(bad.is_empty(), "{bad:#?}");
+}

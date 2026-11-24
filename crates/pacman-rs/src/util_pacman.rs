@@ -151,6 +151,53 @@ pub fn string_display(cfg: &Config, title: Option<&str>, string: Option<&str>, c
     pr!("\n");
 }
 
+/// signature_display
+pub fn signature_display(
+    cfg: &Config,
+    title: Option<&str>,
+    siglist: &libalpm_rs::signing::SigList,
+    maxcols: u16,
+) {
+    use libalpm_rs::signing::{SigStatus, SigValidity};
+    let mut len = 0usize;
+    if let Some(t) = title {
+        len = string_length(t) + 1;
+        pr!("{}{}{} ", cfg.colstr.title, t, cfg.colstr.nocolor);
+    }
+    if siglist.is_empty() {
+        // sic: upstream prints no newline here
+        pr!("None");
+        return;
+    }
+    for (i, result) in siglist.iter().enumerate() {
+        // Don't re-indent the first result
+        if i != 0 {
+            pr!("{:len$}", "");
+        }
+        let status = match result.status {
+            SigStatus::Valid => "Valid",
+            SigStatus::KeyExpired => "Key expired",
+            SigStatus::SigExpired => "Expired",
+            SigStatus::Invalid => "Invalid",
+            SigStatus::KeyUnknown => "Key unknown",
+            SigStatus::KeyDisabled => "Key disabled",
+        };
+        let validity = match result.validity {
+            SigValidity::Full => "full trust",
+            SigValidity::Marginal => "marginal trust",
+            SigValidity::Never => "never trust",
+            SigValidity::Unknown => "unknown trust",
+        };
+        let name = result.key.uid.as_deref().unwrap_or(&result.key.fingerprint);
+        indentprint(
+            &format!("{status}, {validity} from \"{name}\""),
+            len as u16,
+            maxcols,
+        );
+        pr!("\n");
+    }
+}
+
 /// list_display
 pub fn list_display<S: AsRef<str>>(cfg: &Config, title: Option<&str>, list: &[S], maxcols: u16) {
     let mut len = 0usize;

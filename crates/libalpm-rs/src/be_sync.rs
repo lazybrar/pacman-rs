@@ -1,6 +1,5 @@
-//! Port of lib/libalpm/be_sync.c, read side: sync database validation (without signature checks, which
-//! belong to signing.c), registration and population from `.db`/`.files` archives.
-//! shortcut: database signature verification is skipped (as with SigLevel Never) until signing.c is ported.
+//! Port of lib/libalpm/be_sync.c, read side: sync database validation (including signature checks),
+//! registration and population from `.db`/`.files` archives.
 use crate::alpm_log;
 use crate::archive::{ArchiveLines, Fgets, open_archive};
 use crate::backup::Backup;
@@ -11,6 +10,7 @@ use crate::filelist::{File, FileList};
 use crate::handle::{Event, Handle};
 use crate::log::*;
 use crate::package::*;
+use crate::signing::{check_pgp_helper, process_siglist};
 use crate::util::*;
 use std::io::Read;
 use std::rc::Rc;
@@ -83,6 +83,39 @@ impl DbOps for SyncOps {
         } else {
             db.status
                 .set((db.status.get() | DB_STATUS_EXISTS) & !DB_STATUS_MISSING);
+            // this takes into account the default verification level if UNKNOWN was assigned to this db
+            let siglevel = db.get_siglevel();
+            if siglevel & crate::consts::SIG_DATABASE != 0 {
+                let optional = siglevel & crate::consts::SIG_DATABASE_OPTIONAL != 0;
+                let marginal = siglevel & crate::consts::SIG_DATABASE_MARGINAL_OK != 0;
+                let unknown = siglevel & crate::consts::SIG_DATABASE_UNKNOWN_OK != 0;
+                let mut ret;
+                loop {
+                    let mut retry = false;
+                    let list;
+                    (ret, list) =
+                        check_pgp_helper(&db.handle, dbpath, None, optional, marginal, unknown);
+                    if ret != 0 {
+                        retry = process_siglist(
+                            &db.handle,
+                            &db.treename,
+                            &list,
+                            optional,
+                            marginal,
+                            unknown,
+                        );
+                    }
+                    if !retry {
+                        break;
+                    }
+                }
+                if ret != 0 {
+                    db.status
+                        .set((db.status.get() & !DB_STATUS_VALID) | DB_STATUS_INVALID);
+                    db.handle.pm_errno.set(Some(Error::DbInvalidSig));
+                    return 1;
+                }
+            }
         }
         db.status
             .set((db.status.get() | DB_STATUS_VALID) & !DB_STATUS_INVALID);

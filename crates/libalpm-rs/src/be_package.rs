@@ -5,12 +5,16 @@ use crate::archive::{
     AE_IFDIR, AE_IFREG, ArchiveLines, Fgets, decompress_bytes, open_archive, read_mtree,
 };
 use crate::backup::Backup;
+use crate::consts::*;
 use crate::deps::dep_from_string;
 use crate::error::Error;
 use crate::filelist::{File, FileList};
 use crate::handle::Handle;
 use crate::log::*;
 use crate::package::*;
+use crate::signing::{
+    SigList, check_pgp_helper, extract_keyid, key_import, key_in_keychain, sigpath,
+};
 use crate::util::*;
 use std::io::Read;
 use std::rc::Rc;
@@ -368,8 +372,16 @@ pub fn pkg_changelog_read_all(pkg: &Pkg) -> Option<Vec<u8>> {
     None
 }
 
-/// _alpm_pkg_validate_internal for a level without package signature requirements.
-fn pkg_validate_unsigned(handle: &Handle, pkgfile: &str, level: i32) -> Result<i32, Error> {
+/// _alpm_pkg_validate_internal: checksums of `syncpkg` (when it has no usable signature) and the signature
+/// check required by `level`. Returns the validation flags and the signature results.
+pub(crate) fn pkg_validate_internal(
+    handle: &Handle,
+    pkgfile: &str,
+    syncpkg: Option<&Pkg>,
+    level: i32,
+) -> Result<(i32, Option<SigList>), Error> {
+    let mut validation = 0;
+    let mut sigdata = None;
     handle.pm_errno.set(None);
     if pkgfile.is_empty() {
         return handle.err(Error::WrongArgs);
@@ -400,21 +412,112 @@ fn pkg_validate_unsigned(handle: &Handle, pkgfile: &str, level: i32) -> Result<i
             _ => Error::PkgOpen,
         });
     }
-    if level & crate::consts::SIG_PACKAGE != 0 {
-        // shortcut: signing.c is not ported, so a package that must be signature-checked cannot be loaded
+    // can we get away with skipping checksums?
+    let mut has_sig = false;
+    if level & SIG_PACKAGE != 0 {
+        has_sig = syncpkg.is_some_and(|p| p.base64_sig.is_some())
+            || crate::util::access(handle, None, &sigpath(pkgfile), libc::R_OK).is_ok();
+    }
+    if let Some(sp) = syncpkg
+        && (!has_sig || sp.base64_sig.is_none())
+    {
+        if let Some(md5) = sp.md5sum.as_deref()
+            && sp.sha256sum.is_none()
+        {
+            alpm_log!(handle, LOG_DEBUG, "md5sum: {}\n", md5);
+            alpm_log!(handle, LOG_DEBUG, "checking md5sum for {}\n", pkgfile);
+            if crate::util::compute_md5sum(pkgfile).as_deref() != Some(md5) {
+                return handle.err(Error::PkgInvalidChecksum);
+            }
+            validation |= PKG_VALIDATION_MD5SUM;
+        }
+        if let Some(sha) = sp.sha256sum.as_deref() {
+            alpm_log!(handle, LOG_DEBUG, "sha256sum: {}\n", sha);
+            alpm_log!(handle, LOG_DEBUG, "checking sha256sum for {}\n", pkgfile);
+            if crate::util::compute_sha256sum(pkgfile).as_deref() != Some(sha) {
+                return handle.err(Error::PkgInvalidChecksum);
+            }
+            validation |= PKG_VALIDATION_SHA256SUM;
+        }
+    }
+    // even if we don't have a sig, run the check code if level tells us to
+    if level & SIG_PACKAGE != 0 {
+        let sig = syncpkg.and_then(|p| p.base64_sig.as_deref());
         alpm_log!(
             handle,
-            LOG_ERROR,
-            "package signature verification is not implemented yet\n"
+            LOG_DEBUG,
+            "sig data: {}\n",
+            sig.unwrap_or("<from .sig>")
         );
-        return handle.err(Error::PkgInvalidSig);
+        if !has_sig && level & SIG_PACKAGE_OPTIONAL == 0 {
+            return handle.err(Error::PkgMissingSig);
+        }
+        let (ret, list) = check_pgp_helper(
+            handle,
+            pkgfile,
+            sig,
+            level & SIG_PACKAGE_OPTIONAL != 0,
+            level & SIG_PACKAGE_MARGINAL_OK != 0,
+            level & SIG_PACKAGE_UNKNOWN_OK != 0,
+        );
+        if ret != 0 {
+            handle.pm_errno.set(Some(Error::PkgInvalidSig));
+            return Err(Error::PkgInvalidSig);
+        }
+        sigdata = Some(list);
+        if has_sig {
+            validation |= PKG_VALIDATION_SIGNATURE;
+        }
     }
-    Ok(PKG_VALIDATION_NONE)
+    if validation == 0 {
+        validation = PKG_VALIDATION_NONE;
+    }
+    Ok((validation, sigdata))
 }
 
-/// alpm_pkg_load (for levels that do not need signature verification)
+/// read_sigfile: the whole signature file (at most MAX_SIGFILE_SIZE bytes)
+fn read_sigfile(path: &str) -> Option<Vec<u8>> {
+    const MAX_SIGFILE_SIZE: u64 = 16384;
+    let f = std::fs::File::open(path).ok()?;
+    if f.metadata().ok()?.len() > MAX_SIGFILE_SIZE {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
+/// alpm_pkg_load
+///
+/// Deviation: on "required key missing from keyring" upstream returns -1 with pm_errno untouched; the Err value
+/// is then `Error::PkgInvalidSig` while `handle.errno()` stays as upstream.
 pub fn pkg_load(handle: &Rc<Handle>, filename: &str, full: bool, level: i32) -> Result<Pkg, Error> {
-    let validation = pkg_validate_unsigned(handle, filename, level)?;
+    let sp = sigpath(filename);
+    if crate::util::access(handle, None, &sp, libc::R_OK).is_ok() && level & SIG_PACKAGE != 0 {
+        let sig = match read_sigfile(&sp) {
+            Some(s) => s,
+            None => {
+                alpm_log!(handle, LOG_ERROR, "failed to read signature file: {}\n", sp);
+                return Err(handle.errno().unwrap_or(Error::PkgInvalidSig));
+            }
+        };
+        let mut keys = Vec::new();
+        let mut fail = false;
+        if extract_keyid(handle, filename, &sig, &mut keys).is_ok() {
+            for key in &keys {
+                if key_in_keychain(handle, key) == 0 {
+                    // upstream loads the package here (for its log output) and drops it again
+                    let _ = pkg_load_internal(handle, filename, full);
+                    if key_import(handle, None, key) == -1 {
+                        fail = true;
+                    }
+                }
+            }
+        }
+        if fail {
+            alpm_log!(handle, LOG_ERROR, "required key missing from keyring\n");
+            return Err(handle.errno().unwrap_or(Error::PkgInvalidSig));
+        }
+    }
+    let (validation, _) = pkg_validate_internal(handle, filename, None, level)?;
     let mut pkg = pkg_load_internal(handle, filename, full)?;
     if let Some(d) = pkg.desc.get_mut() {
         d.validation = validation;

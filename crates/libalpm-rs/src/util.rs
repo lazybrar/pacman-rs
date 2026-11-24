@@ -214,6 +214,54 @@ pub fn compute_sha256sum(path: &str) -> Option<String> {
     digest_file::<sha2::Sha256>(path)
 }
 
+/// _alpm_access: faccessat(AT_SYMLINK_NOFOLLOW) on `dir`+`file`, logging like upstream; Err(errno)
+pub fn access(
+    handle: &crate::handle::Handle,
+    dir: Option<&str>,
+    file: &str,
+    amode: i32,
+) -> Result<(), i32> {
+    let path = format!("{}{}", dir.unwrap_or(""), file);
+    let Ok(c) = std::ffi::CString::new(path.as_str()) else {
+        return Err(libc::ENOENT);
+    };
+    // SAFETY: valid C string
+    let r =
+        unsafe { libc::faccessat(libc::AT_FDCWD, c.as_ptr(), amode, libc::AT_SYMLINK_NOFOLLOW) };
+    if r == 0 {
+        return Ok(());
+    }
+    let e = std::io::Error::last_os_error();
+    let s = strerror(&e);
+    let what = [
+        (libc::R_OK, "is not readable"),
+        (libc::W_OK, "is not writable"),
+        (libc::X_OK, "is not executable"),
+    ];
+    for (bit, msg) in what {
+        if amode & bit != 0 {
+            crate::alpm_log!(
+                handle,
+                crate::log::LOG_DEBUG,
+                "\"{}\" {}: {}\n",
+                path,
+                msg,
+                s
+            );
+        }
+    }
+    if amode == libc::F_OK {
+        crate::alpm_log!(
+            handle,
+            crate::log::LOG_DEBUG,
+            "\"{}\" does not exist: {}\n",
+            path,
+            s
+        );
+    }
+    Err(e.raw_os_error().unwrap_or(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
