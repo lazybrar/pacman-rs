@@ -107,6 +107,14 @@ impl Db {
         self.ops.validate(self)
     }
 
+    /// _alpm_db_free_pkgcache (also drops the group cache)
+    pub fn free_pkgcache(&mut self) {
+        self.pkgcache.take();
+        self.grpcache.take();
+        self.status
+            .set(self.status.get() & !(DB_STATUS_PKGCACHE | DB_STATUS_GRPCACHE));
+    }
+
     /// alpm_db_get_siglevel: the handle default replaces SIG_USE_DEFAULT
     pub fn get_siglevel(&self) -> i32 {
         if self.siglevel & crate::consts::SIG_USE_DEFAULT != 0 {

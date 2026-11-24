@@ -3,8 +3,10 @@
 use crate::alpm_log;
 use crate::archive::{ArchiveLines, Fgets, open_archive};
 use crate::backup::Backup;
+use crate::consts::{DB_USAGE_SYNC, SIG_DATABASE, SIG_DATABASE_OPTIONAL};
 use crate::db::*;
 use crate::deps::{Dep, dep_from_string};
+use crate::dload::{Payload, PayloadRef, download, payload_ref};
 use crate::error::Error;
 use crate::filelist::{File, FileList};
 use crate::handle::{Event, Handle};
@@ -57,6 +59,141 @@ fn access_r_ok(handle: &Handle, path: &str) -> Result<(), i32> {
         return Err(e.raw_os_error().unwrap_or(0));
     }
     Ok(())
+}
+
+/// get_sync_dir: "<dbpath>sync/", created when missing
+fn get_sync_dir(handle: &Handle) -> Option<String> {
+    let syncpath = format!("{}sync/", handle.dbpath);
+    match std::fs::metadata(&syncpath) {
+        Err(_) => {
+            alpm_log!(
+                handle,
+                LOG_DEBUG,
+                "database dir '{}' does not exist, creating it\n",
+                syncpath
+            );
+            if makepath(&syncpath) != 0 {
+                handle.pm_errno.set(Some(Error::System));
+                return None;
+            }
+        }
+        Ok(m) if !m.is_dir() => {
+            alpm_log!(handle, LOG_WARNING, "removing invalid file: {}\n", syncpath);
+            if std::fs::remove_file(&syncpath).is_err() || makepath(&syncpath) != 0 {
+                handle.pm_errno.set(Some(Error::System));
+                return None;
+            }
+        }
+        Ok(_) => {}
+    }
+    Some(syncpath)
+}
+
+/// alpm_db_update: download the databases in `dbs` (all sync databases for pacman); `force` ignores the
+/// remote modification time. Returns 0 on success, 1 when nothing needed updating, -1 on error.
+pub fn db_update(handle: &Rc<Handle>, dbs: &mut [Db], force: bool) -> i32 {
+    handle.pm_errno.set(None);
+    let Some(syncpath) = get_sync_dir(handle) else {
+        return -1;
+    };
+    let Some(temporary_syncpath) = download_dir_setup(handle, &syncpath) else {
+        return -1;
+    };
+    let dbext = handle.dbext();
+    // make sure we have a sane umask
+    // SAFETY: umask cannot fail
+    let oldmask = unsafe { libc::umask(0o022) };
+    let mut ret = -1;
+    let mut payloads: Vec<PayloadRef> = Vec::new();
+
+    'cleanup: {
+        // attempt to grab a lock
+        if handle.lock() != 0 {
+            handle.pm_errno.set(Some(Error::HandleLock));
+            break 'cleanup;
+        }
+        for db in dbs.iter() {
+            let mut dbforce = force;
+            if db.usage.get() & DB_USAGE_SYNC == 0 {
+                continue;
+            }
+            if db.servers.borrow().is_empty() {
+                handle.pm_errno.set(Some(Error::ServerNone));
+                break 'cleanup;
+            }
+            // force update of invalid databases to fix potential mismatched database/signature
+            if db.status.get() & DB_STATUS_INVALID != 0 {
+                dbforce = true;
+            }
+            let siglevel = db.get_siglevel();
+            let filepath = format!("{}{}", db.treename, dbext);
+            payloads.push(payload_ref(Payload {
+                servers: db.servers.borrow().clone(),
+                remote_name: filepath.clone(),
+                destfile_name: Some(format!("{temporary_syncpath}{filepath}")),
+                tempfile_name: Some(format!("{temporary_syncpath}{filepath}.part")),
+                filepath: Some(filepath),
+                force: dbforce,
+                unlink_on_fail: true,
+                download_signature: siglevel & SIG_DATABASE != 0,
+                signature_optional: siglevel & SIG_DATABASE_OPTIONAL != 0,
+                // set hard upper limit of 128 MiB
+                max_size: 128 * 1024 * 1024,
+                ..Default::default()
+            }));
+        }
+        if payloads.is_empty() {
+            ret = 0;
+            break 'cleanup;
+        }
+        handle.event(&Event::DbRetrieveStart);
+        ret = download(handle, &payloads, &syncpath, &temporary_syncpath);
+        if ret < 0 {
+            handle.event(&Event::DbRetrieveFailed);
+            break 'cleanup;
+        }
+        handle.event(&Event::DbRetrieveDone);
+
+        for db in dbs.iter_mut() {
+            if db.usage.get() & DB_USAGE_SYNC == 0 {
+                continue;
+            }
+            // Cache needs to be rebuilt
+            db.free_pkgcache();
+            // clear all status flags regarding validity/existence
+            db.status.set(
+                db.status.get()
+                    & !(DB_STATUS_VALID | DB_STATUS_INVALID | DB_STATUS_EXISTS | DB_STATUS_MISSING),
+            );
+            // if the download failed skip validation to preserve the download error
+            if db.get_valid_internal() != 0 {
+                alpm_log!(
+                    handle,
+                    LOG_DEBUG,
+                    "failed to validate db: {}\n",
+                    db.treename
+                );
+                // pm_errno should be set
+                ret = -1;
+            }
+        }
+    }
+
+    handle.unlock();
+    if ret == -1 {
+        // pm_errno was set by the download code
+        alpm_log!(
+            handle,
+            LOG_DEBUG,
+            "failed to sync dbs: {}\n",
+            handle.errno().map_or("unexpected error", |e| e.strerror())
+        );
+    } else {
+        handle.pm_errno.set(None);
+    }
+    // SAFETY: restoring the previous umask
+    unsafe { libc::umask(oldmask) };
+    ret
 }
 
 pub struct SyncOps;

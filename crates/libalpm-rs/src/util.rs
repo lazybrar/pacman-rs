@@ -262,6 +262,238 @@ pub fn access(
     Err(e.raw_os_error().unwrap_or(0))
 }
 
+/// _alpm_makepath: create a directory and its parents (mode 0755); 0 on success, 1 on error
+pub fn makepath(path: &str) -> i32 {
+    // SAFETY: umask cannot fail
+    let old = unsafe { libc::umask(0) };
+    let mut ret = 0;
+    let mut dirs: Vec<&str> = path
+        .char_indices()
+        .filter(|&(i, c)| c == '/' && i > 0 && !path[..i].ends_with('/'))
+        .map(|(i, _)| &path[..i])
+        .collect();
+    dirs.push(path);
+    for d in dirs {
+        use std::os::unix::fs::DirBuilderExt;
+        match std::fs::DirBuilder::new().mode(0o755).create(d) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => {
+                ret = 1;
+                break;
+            }
+        }
+    }
+    // SAFETY: restoring the previous umask
+    unsafe { libc::umask(old) };
+    ret
+}
+
+/// _alpm_filecache_find: the first cache dir holding a regular file of that name
+pub fn filecache_find(handle: &crate::handle::Handle, filename: &str) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    for dir in &handle.opts.borrow().cachedirs {
+        let path = format!("{dir}{filename}");
+        match std::fs::metadata(&path) {
+            Ok(m) if m.is_file() => {
+                crate::alpm_log!(
+                    handle,
+                    crate::log::LOG_DEBUG,
+                    "found cached pkg: {}\n",
+                    path
+                );
+                return Some(path);
+            }
+            Ok(m) => crate::alpm_log!(
+                handle,
+                crate::log::LOG_WARNING,
+                "cached pkg '{}' is not a regular file: mode={}\n",
+                path,
+                m.mode()
+            ),
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => crate::alpm_log!(
+                handle,
+                crate::log::LOG_WARNING,
+                "could not open '{}'\n: {}",
+                path,
+                strerror(&e)
+            ),
+            Err(_) => {}
+        }
+    }
+    None
+}
+
+/// _alpm_filecache_exists
+pub fn filecache_exists(handle: &crate::handle::Handle, filename: &str) -> bool {
+    filecache_find(handle, filename).is_some()
+}
+
+/// _alpm_filecache_setup: a writable cache directory (TMPDIR or /tmp as the last resort)
+pub fn filecache_setup(handle: &crate::handle::Handle) -> String {
+    use crate::log::{LOG_DEBUG, LOG_WARNING};
+    use std::os::unix::fs::MetadataExt;
+    let dirs = handle.opts.borrow().cachedirs.clone();
+    for cachedir in dirs {
+        match std::fs::metadata(&cachedir) {
+            Err(_) => {
+                // cache directory does not exist.... try creating it
+                crate::alpm_log!(
+                    handle,
+                    LOG_WARNING,
+                    "no {} cache exists, creating...\n",
+                    cachedir
+                );
+                if makepath(&cachedir) == 0 {
+                    crate::alpm_log!(handle, LOG_DEBUG, "using cachedir: {}\n", cachedir);
+                    return cachedir;
+                }
+            }
+            Ok(m) if !m.is_dir() => {
+                crate::alpm_log!(
+                    handle,
+                    LOG_DEBUG,
+                    "skipping cachedir, not a directory: {}\n",
+                    cachedir
+                )
+            }
+            Ok(m) => {
+                if access(handle, None, &cachedir, libc::W_OK).is_err() {
+                    crate::alpm_log!(
+                        handle,
+                        LOG_DEBUG,
+                        "skipping cachedir, not writable: {}\n",
+                        cachedir
+                    );
+                } else if m.mode() & 0o222 == 0 {
+                    crate::alpm_log!(
+                        handle,
+                        LOG_DEBUG,
+                        "skipping cachedir, no write bits set: {}\n",
+                        cachedir
+                    );
+                } else {
+                    crate::alpm_log!(handle, LOG_DEBUG, "using cachedir: {}\n", cachedir);
+                    return cachedir;
+                }
+            }
+        }
+    }
+    // we didn't find a valid cache directory. use TMPDIR or /tmp.
+    // sic: upstream tests `stat(tmpdir) && S_ISDIR`, which is only true when stat fails and then mode is garbage
+    let tmpdir = "/tmp".to_string();
+    let cachedir = if tmpdir.ends_with('/') {
+        tmpdir
+    } else {
+        format!("{tmpdir}/")
+    };
+    handle.opts.borrow_mut().cachedirs.push(cachedir.clone());
+    crate::alpm_log!(handle, LOG_DEBUG, "using cachedir: {}\n", cachedir);
+    crate::alpm_log!(
+        handle,
+        LOG_WARNING,
+        "couldn't find or create package cache, using {} instead\n",
+        cachedir
+    );
+    cachedir
+}
+
+/// _alpm_use_sandbox
+pub fn use_sandbox(handle: &crate::handle::Handle) -> bool {
+    let o = handle.opts.borrow();
+    handle.user == 0
+        && o.sandboxuser.is_some()
+        && (!o.disable_sandbox_filesystem || !o.disable_sandbox_syscalls)
+}
+
+/// _alpm_download_dir_setup: a temporary download directory when sandboxing, else `dir` itself
+pub fn download_dir_setup(handle: &crate::handle::Handle, dir: &str) -> Option<String> {
+    use crate::error::Error;
+    use crate::log::LOG_ERROR;
+    if !use_sandbox(handle) {
+        // we are not using sandbox features, download directly to the current directory
+        return Some(dir.to_string());
+    }
+    let user = handle.opts.borrow().sandboxuser.clone().unwrap_or_default();
+    let c = std::ffi::CString::new(user.as_str()).ok()?;
+    // SAFETY: getpwnam with a valid C string; the result is only read immediately
+    let pw = unsafe { libc::getpwnam(c.as_ptr()) };
+    if pw.is_null() {
+        crate::alpm_log!(
+            handle,
+            LOG_ERROR,
+            "download user '{}' does not exist\n",
+            user
+        );
+        handle.pm_errno.set(Some(Error::RetrievePrepare));
+        return None;
+    }
+    // SAFETY: pw is non-null
+    let (uid, gid) = unsafe { ((*pw).pw_uid, (*pw).pw_gid) };
+    let mut template = format!("{dir}download-XXXXXX").into_bytes();
+    template.push(0);
+    // SAFETY: template is a writable NUL-terminated buffer
+    let r = unsafe { libc::mkdtemp(template.as_mut_ptr().cast()) };
+    template.pop();
+    let newdir = String::from_utf8_lossy(&template).into_owned();
+    if r.is_null() {
+        let e = std::io::Error::last_os_error();
+        crate::alpm_log!(
+            handle,
+            LOG_ERROR,
+            "failed to create temporary download directory {}: {}\n",
+            newdir,
+            strerror(&e)
+        );
+        handle.pm_errno.set(Some(Error::RetrievePrepare));
+        return None;
+    }
+    let cn = std::ffi::CString::new(newdir.as_str()).ok()?;
+    // SAFETY: valid C string
+    if unsafe { libc::chown(cn.as_ptr(), uid, gid) } == -1 {
+        let e = std::io::Error::last_os_error();
+        crate::alpm_log!(
+            handle,
+            LOG_ERROR,
+            "failed to chown temporary download directory {}: {}\n",
+            newdir,
+            strerror(&e)
+        );
+        handle.pm_errno.set(Some(Error::RetrievePrepare));
+        return None;
+    }
+    Some(format!("{newdir}/"))
+}
+
+/// _alpm_remove_temporary_download_dir: remove leftover files, then the directory
+pub fn remove_temporary_download_dir(dir: &str) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let _ = std::fs::remove_file(e.path());
+    }
+    let _ = std::fs::remove_dir(dir);
+}
+
+/// _alpm_reset_signals: default handling for the POSIX signals
+pub fn reset_signals() {
+    use libc::*;
+    for s in [
+        SIGABRT, SIGALRM, SIGBUS, SIGCHLD, SIGCONT, SIGFPE, SIGHUP, SIGILL, SIGINT, SIGKILL,
+        SIGPIPE, SIGQUIT, SIGSEGV, SIGSTOP, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2,
+        SIGPROF, SIGSYS, SIGTRAP, SIGURG, SIGVTALRM, SIGXCPU, SIGXFSZ, SIGPOLL,
+    ] {
+        // SAFETY: installing SIG_DFL with a zeroed sigaction
+        unsafe {
+            let mut sa: sigaction = std::mem::zeroed();
+            sa.sa_sigaction = SIG_DFL;
+            sigemptyset(&mut sa.sa_mask);
+            sigaction(s, &sa, std::ptr::null_mut());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -127,7 +127,11 @@ fn run(bin: &Path, c: &Case) -> String {
     let o = cmd.output().unwrap();
     let code = o.status.code().unwrap_or(-1);
     // a Rust panic (101) shows its message, so a flaky failure is diagnosable
-    let err = if code == 101 { String::from_utf8_lossy(&o.stderr).into_owned() } else { String::new() };
+    let err = if code == 101 {
+        String::from_utf8_lossy(&o.stderr).into_owned()
+    } else {
+        String::new()
+    };
     format!("{}{err}exit={code}", String::from_utf8_lossy(&o.stdout))
 }
 

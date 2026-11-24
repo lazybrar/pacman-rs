@@ -14,9 +14,42 @@ pub type LogCb = Box<dyn Fn(u32, &str)>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     DatabaseMissing { dbname: String },
+    DbRetrieveStart,
+    DbRetrieveDone,
+    DbRetrieveFailed,
+    PkgRetrieveStart { num: usize, total_size: i64 },
+    PkgRetrieveDone,
+    PkgRetrieveFailed,
 }
 
 pub type EventCb = Box<dyn Fn(&Event)>;
+
+/// alpm_download_event_*_t (the event type plus its payload)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadEvent {
+    /// whether this file is optional and thus the errors could be ignored
+    Init {
+        optional: bool,
+    },
+    Progress {
+        downloaded: i64,
+        total: i64,
+    },
+    /// whether the download will resume or start over
+    Retry {
+        resume: bool,
+    },
+    /// result: 0 completed, 1 up-to-date, -1 error
+    Completed {
+        total: i64,
+        result: i32,
+    },
+}
+
+/// alpm_cb_download
+pub type DlCb = Box<dyn Fn(&str, &DownloadEvent)>;
+/// alpm_cb_fetch: (url, localpath, force) -> 0 ok, 1 identical, -1 error
+pub type FetchCb = Box<dyn Fn(&str, &str, bool) -> i32>;
 
 /// alpm_question_t (the questions raised so far); the callback fills in the answer field.
 pub enum Question<'a> {
@@ -80,6 +113,14 @@ pub struct Handle {
     pub logcb: RefCell<Option<LogCb>>,
     pub eventcb: RefCell<Option<EventCb>>,
     pub questioncb: RefCell<Option<QuestionCb>>,
+    pub dlcb: RefCell<Option<DlCb>>,
+    pub fetchcb: RefCell<Option<FetchCb>>,
+    /// handle->server_errors: errors per host (-1 is a hard error)
+    pub server_errors: RefCell<Vec<(String, i32)>>,
+    /// handle->logstream
+    pub logstream: RefCell<Option<std::fs::File>>,
+    /// handle->lockfd
+    pub lockfd: RefCell<Option<std::fs::File>>,
     /// handle->known_keys: fingerprints already found in the keyring
     pub known_keys: RefCell<Vec<String>>,
     /// handle->trans->flags & ALPM_TRANS_FLAG_NODEPVERSION (no transaction is false)
@@ -130,6 +171,11 @@ impl Handle {
             logcb: RefCell::new(None),
             eventcb: RefCell::new(None),
             questioncb: RefCell::new(None),
+            dlcb: RefCell::new(None),
+            fetchcb: RefCell::new(None),
+            server_errors: RefCell::new(Vec::new()),
+            logstream: RefCell::new(None),
+            lockfd: RefCell::new(None),
             known_keys: RefCell::new(Vec::new()),
             no_dep_version: Cell::new(false),
             pm_errno: Cell::new(None),
@@ -154,6 +200,121 @@ impl Handle {
         if let Some(cb) = self.eventcb.borrow().as_ref() {
             cb(e);
         }
+    }
+
+    /// alpm_logaction: append "[ISO time] [prefix] message" to the log file (the stream is opened on first use).
+    /// shortcut: syslog is not supported.
+    pub fn logaction(&self, prefix: &str, args: std::fmt::Arguments) -> i32 {
+        let prefix = if prefix.is_empty() { "UNKNOWN" } else { prefix };
+        let mut ret = 0;
+        if self.logstream.borrow().is_none()
+            && let Some(path) = self.logfile()
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            match std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .mode(0o644)
+                .custom_flags(libc::O_CLOEXEC)
+                .open(&path)
+            {
+                Ok(f) => *self.logstream.borrow_mut() = Some(f),
+                Err(e) => {
+                    self.pm_errno.set(Some(match e.raw_os_error() {
+                        Some(libc::EACCES) => Error::Badperms,
+                        Some(libc::ENOENT) => Error::NotADir,
+                        _ => Error::System,
+                    }));
+                    ret = -1;
+                }
+            }
+        }
+        if let Some(f) = self.logstream.borrow_mut().as_mut() {
+            use std::io::Write;
+            // SAFETY: localtime_r/strftime on local buffers
+            let ts = unsafe {
+                let t = libc::time(std::ptr::null_mut());
+                let mut tm: libc::tm = std::mem::zeroed();
+                libc::localtime_r(&t, &mut tm);
+                let mut buf = [0u8; 32];
+                let n = libc::strftime(buf.as_mut_ptr().cast(), 32, c"%FT%T%z".as_ptr(), &tm);
+                String::from_utf8_lossy(&buf[..n]).into_owned()
+            };
+            if write!(f, "[{ts}] [{prefix}] {args}").is_err() {
+                ret = -1;
+                self.pm_errno.set(Some(Error::System));
+            }
+            let _ = f.flush();
+        }
+        ret
+    }
+
+    /// _alpm_handle_lock: 0 on success, -1 on error
+    pub fn lock(&self) -> i32 {
+        if self.lockfd.borrow().is_some() {
+            return 0;
+        }
+        let lockfile = self.lockfile();
+        // create the dir of the lockfile first
+        let dir = lockfile
+            .rfind('/')
+            .map_or(lockfile.as_str(), |p| &lockfile[..p]);
+        if crate::util::makepath(dir) != 0 {
+            return -1;
+        }
+        use std::os::unix::fs::OpenOptionsExt;
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o000)
+            .custom_flags(libc::O_CLOEXEC)
+            .open(&lockfile)
+        {
+            Ok(f) => {
+                *self.lockfd.borrow_mut() = Some(f);
+                0
+            }
+            Err(_) => -1,
+        }
+    }
+
+    /// alpm_unlock: 0 on success, -1 on error (pm_errno set when the lock file cannot be removed)
+    pub fn alpm_unlock(&self) -> i32 {
+        let lockfile = self.lockfile();
+        if lockfile.is_empty() || self.lockfd.borrow().is_none() {
+            return 0;
+        }
+        *self.lockfd.borrow_mut() = None;
+        if std::fs::remove_file(&lockfile).is_err() {
+            self.pm_errno.set(Some(Error::System));
+            -1
+        } else {
+            0
+        }
+    }
+
+    /// _alpm_handle_unlock
+    pub fn unlock(&self) -> i32 {
+        let lockfile = self.lockfile();
+        if self.alpm_unlock() != 0 {
+            let missing = !std::path::Path::new(&lockfile).exists();
+            if missing {
+                alpm_log!(self, LOG_WARNING, "lock file missing {}\n", lockfile);
+                self.logaction(
+                    "ALPM",
+                    format_args!("warning: lock file missing {}\n", lockfile),
+                );
+                return 0;
+            }
+            alpm_log!(
+                self,
+                LOG_WARNING,
+                "could not remove lock file {}\n",
+                lockfile
+            );
+            return -1;
+        }
+        0
     }
 
     /// QUESTION
@@ -210,6 +371,8 @@ impl Handle {
     /// alpm_option_set_logfile
     pub fn set_logfile(&self, logfile: &str) -> i32 {
         self.opts.borrow_mut().logfile = Some(logfile.to_string());
+        // close the stream so logaction will reopen a new stream on the new logfile
+        *self.logstream.borrow_mut() = None;
         alpm_log!(self, LOG_DEBUG, "option 'logfile' = {}\n", logfile);
         0
     }
