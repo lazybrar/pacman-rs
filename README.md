@@ -3,14 +3,17 @@
 An experimental Rust port of [pacman](https://gitlab.archlinux.org/pacman/pacman) and libalpm.
 It reads the same database and `pacman.conf`, takes the same flags and prints the same output.
 
-**Status: early, read-only.** It cannot install, remove or upgrade anything yet; those commands
-exit with "not implemented yet". Keep using pacman.
+**Status: early.** It cannot install, remove or upgrade anything yet; those commands
+exit with "not implemented yet". Keep using pacman. Note that `-Sy`/`-Fy` run as root do
+refresh the real sync databases, the same as pacman would.
 
 Not affiliated with Arch Linux or the pacman project. Report bugs here, not to them.
 
 ## Works today
 
 - `pacman-rs -Q...`, `-Ss`, `-Si`, `-Sl`, `-Sg`, `-T`, `-F` (`-Fl`, `-Fx`, `--machinereadable`)
+- `-Sy`, `-Syy`, `-Fy`, `-Sw` (download only), with signature checks through gpgme and the
+  `DownloadUser` sandbox
 - `pacman-conf`, `vercmp`
 
 Tests diff stdout, stderr and exit codes against the system's pacman (`LC_ALL=C`).
