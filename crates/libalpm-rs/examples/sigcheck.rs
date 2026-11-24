@@ -23,7 +23,7 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let (mode, gpgdir, dbpath, level, path) =
         (&a[1], &a[2], &a[3], a[4].parse::<i32>().unwrap(), &a[5]);
-    let mut alpm = alpm_initialize("/", dbpath).expect("init");
+    let mut alpm = alpm_initialize("/", dbpath).unwrap_or_else(|e| panic!("init {dbpath}: {e:?}"));
     let h = alpm.handle.clone();
     *h.logcb.borrow_mut() = Some(Box::new(|lvl, msg| {
         if lvl & (libalpm_rs::log::LOG_ERROR | libalpm_rs::log::LOG_WARNING) != 0

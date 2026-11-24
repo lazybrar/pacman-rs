@@ -125,11 +125,10 @@ fn run(bin: &Path, c: &Case) -> String {
         cmd.current_dir(d);
     }
     let o = cmd.output().unwrap();
-    format!(
-        "{}exit={}",
-        String::from_utf8_lossy(&o.stdout),
-        o.status.code().unwrap_or(-1)
-    )
+    let code = o.status.code().unwrap_or(-1);
+    // a Rust panic (101) shows its message, so a flaky failure is diagnosable
+    let err = if code == 101 { String::from_utf8_lossy(&o.stderr).into_owned() } else { String::new() };
+    format!("{}{err}exit={code}", String::from_utf8_lossy(&o.stdout))
 }
 
 fn rust_bin() -> PathBuf {
@@ -413,6 +412,8 @@ fn signing_matches_libalpm() {
         let dir = tmpl.join(&s.name);
         let dbp = dir.join("dbp");
         std::fs::create_dir_all(dbp.join("local")).unwrap();
+        // pre-written: libalpm creates it in an empty local/ while a parallel case reads it
+        std::fs::write(dbp.join("local/ALPM_DB_VERSION"), "9\n").unwrap();
         std::fs::create_dir_all(dbp.join("sync")).unwrap();
         let payload = if s.tamper { &pkg_tampered } else { &pkg };
         let pfile = dir.join("pkg-1-1-any.pkg.tar.zst");
@@ -510,6 +511,8 @@ fn signing_matches_libalpm() {
             let dir = base.join("sp").join(name);
             let dbp = dir.join("dbp");
             std::fs::create_dir_all(dbp.join("local")).unwrap();
+            // pre-written: libalpm creates it in an empty local/ while a parallel case reads it
+            std::fs::write(dbp.join("local/ALPM_DB_VERSION"), "9\n").unwrap();
             std::fs::create_dir_all(dbp.join("sync")).unwrap();
             std::fs::copy(
                 if tamper { &pkg_tampered } else { &pkg },
@@ -636,6 +639,8 @@ fn live_cache_matches_libalpm() {
     }
     let dbp = base.join("dbp");
     std::fs::create_dir_all(dbp.join("local")).unwrap();
+    // pre-written: libalpm creates it in an empty local/ while a parallel case reads it
+    std::fs::write(dbp.join("local/ALPM_DB_VERSION"), "9\n").unwrap();
     let mut pkgs: Vec<PathBuf> = std::fs::read_dir(cache)
         .unwrap()
         .filter_map(|e| e.ok())
