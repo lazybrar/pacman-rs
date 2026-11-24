@@ -225,11 +225,12 @@ fn dep_graph_init<'a>(alpm: &'a Alpm, targets: &[&'a Pkg], ignore: &[&Pkg]) -> V
     // We create the vertices
     let mut vertices: Vec<Graph<&Pkg>> = targets.iter().map(|p| Graph::new(*p)).collect();
     // We compute the edges
-    let ntargets = vertices.len();
-    for i in 0..ntargets {
+    // upstream walks the list while appending local vertices, so they get edges too
+    let mut i = 0;
+    while i < vertices.len() {
         let p_i = vertices[i].data;
         // TODO (upstream) this should be somehow combined with alpm_checkdeps
-        for j in 0..ntargets {
+        for j in 0..vertices.len() {
             if pkg_depends_on(p_i, vertices[j].data) {
                 vertices[i].children.push(j);
             }
@@ -247,6 +248,7 @@ fn dep_graph_init<'a>(alpm: &'a Alpm, targets: &[&'a Pkg], ignore: &[&Pkg]) -> V
         }
         localpkgs = rest;
         vertices[i].iterator = 0;
+        i += 1;
     }
     vertices
 }
@@ -428,7 +430,7 @@ pub fn checkdeps(
                 );
                 baddeps.push(DepMissing {
                     target: tp.name.clone(),
-                    depend: orig.clone(),
+                    depend: (*depend).clone(), // upstream copies after the mod override
                     causingpkg: None,
                 });
             }
@@ -458,7 +460,7 @@ pub fn checkdeps(
                     );
                     baddeps.push(DepMissing {
                         target: lp.name.clone(),
-                        depend: orig.clone(),
+                        depend: (*depend).clone(), // upstream copies after the mod override
                         causingpkg: Some(causingpkg.name.clone()),
                     });
                 }
@@ -829,6 +831,21 @@ mod tests {
     }
 
     #[test]
+    fn sortbydeps_indirect_through_local() {
+        // A -> L (local) -> B: upstream adds L lazily and still gives it edges, so B sorts first
+        let h = Handle::new("/nonexistent");
+        let n = PkgReason::Explicit;
+        let alpm = Alpm {
+            localdb: mkdb(&h, "local", true, vec![pkg(&h, "L", "B", "", n)]),
+            syncdbs: vec![],
+            handle: h.clone(),
+        };
+        let t = [pkg(&h, "A", "L", "", n), pkg(&h, "B", "", "", n)];
+        let tr: Vec<&Pkg> = t.iter().collect();
+        assert_eq!(names(&sortbydeps(&alpm, &tr, &[], false)), ["B", "A"]);
+    }
+
+    #[test]
     fn sortbydeps_local_packages_not_in_output() {
         let h = Handle::new("/nonexistent");
         let n = PkgReason::Explicit;
@@ -867,6 +884,9 @@ mod tests {
         );
         h.no_dep_version.set(true);
         assert!(checkdeps(&h, &all[1..], &[], &up, false).is_empty());
+        // still missing without a version: reported unversioned, as upstream copies after the override
+        let miss = checkdeps(&h, &[], &[], &up, false);
+        assert_eq!(dep_compute_string(&miss[0].depend), "bar");
         h.no_dep_version.set(false);
         // removing bar breaks foo (remove001-like), reported with the causing package
         let b3 = pkg(&h, "bar=3-1", "", "", n);
