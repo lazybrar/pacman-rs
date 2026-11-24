@@ -18,6 +18,23 @@ pub enum Event {
 
 pub type EventCb = Box<dyn Fn(&Event)>;
 
+/// alpm_question_t (the questions raised so far); the callback fills in the answer field.
+pub enum Question<'a> {
+    /// alpm_question_install_ignorepkg_t
+    InstallIgnorepkg {
+        install: bool,
+        pkg: &'a crate::package::Pkg,
+    },
+    /// alpm_question_select_provider_t
+    SelectProvider {
+        use_index: i32,
+        providers: Vec<&'a crate::package::Pkg>,
+        depend: &'a Dep,
+    },
+}
+
+pub type QuestionCb = Box<dyn for<'a> Fn(&mut Question<'a>)>;
+
 /// SYSHOOKDIR (DATAROOTDIR/libalpm/hooks/)
 pub const SYSHOOKDIR: &str = "/usr/share/libalpm/hooks/";
 
@@ -56,6 +73,9 @@ pub struct Handle {
     pub dbext: RefCell<String>,
     pub logcb: RefCell<Option<LogCb>>,
     pub eventcb: RefCell<Option<EventCb>>,
+    pub questioncb: RefCell<Option<QuestionCb>>,
+    /// handle->trans->flags & ALPM_TRANS_FLAG_NODEPVERSION (no transaction is false)
+    pub no_dep_version: Cell<bool>,
     /// None is ALPM_ERR_OK
     pub pm_errno: Cell<Option<Error>>,
     pub opts: RefCell<Options>,
@@ -101,6 +121,8 @@ impl Handle {
             dbext: RefCell::new(dbext.into()),
             logcb: RefCell::new(None),
             eventcb: RefCell::new(None),
+            questioncb: RefCell::new(None),
+            no_dep_version: Cell::new(false),
             pm_errno: Cell::new(None),
             opts: RefCell::new(Options {
                 parallel_downloads: 1,
@@ -122,6 +144,13 @@ impl Handle {
     pub fn event(&self, e: &Event) {
         if let Some(cb) = self.eventcb.borrow().as_ref() {
             cb(e);
+        }
+    }
+
+    /// QUESTION
+    pub fn question(&self, q: &mut Question) {
+        if let Some(cb) = self.questioncb.borrow().as_ref() {
+            cb(q);
         }
     }
 

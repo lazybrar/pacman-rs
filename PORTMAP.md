@@ -16,14 +16,14 @@ C file -> Rust module -> status. libalpm-rs modules are in `crates/libalpm-rs/sr
 | be_sync.c | be_sync.rs | partial (read side; update, db signature checks todo) |
 | conflict.c | conflict.rs | todo |
 | db.c | db.rs | partial (read side, search, add_server; unregister/update todo) |
-| deps.c | deps.rs | partial (from_string, compute_string, depcmp, find_satisfier; checkdeps, resolvedeps, sort todo) |
+| deps.c | deps.rs | done (recursedeps adds borrowed packages instead of _alpm_pkg_dup copies; no transaction flags beyond nodepversion) |
 | diskspace.c | diskspace.rs | todo |
 | dload.c | dload.rs | todo |
 | error.c | error.rs | done |
 | filelist.c | filelist.rs | done |
-| graph.c | graph.rs | todo |
+| graph.c | graph.rs | done |
 | group.c | group.rs | done |
-| handle.c | handle.rs | partial (options used by pacman, log/event callbacks; lock, other callbacks todo) |
+| handle.c | handle.rs | partial (options used by pacman, log, event and question callbacks; lock, other callbacks todo) |
 | hook.c | hook.rs | todo |
 | log.c | log.rs | partial (_alpm_log) |
 | package.c | package.rs | partial (accessors, check_meta, xdata, should_ignore, requiredby; dup todo) |

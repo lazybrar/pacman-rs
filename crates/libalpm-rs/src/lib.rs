@@ -10,6 +10,7 @@ pub mod db;
 pub mod deps;
 pub mod error;
 pub mod filelist;
+pub mod graph;
 pub mod group;
 pub mod handle;
 pub mod log;
