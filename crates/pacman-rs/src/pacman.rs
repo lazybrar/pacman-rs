@@ -1103,6 +1103,7 @@ pub fn main() -> ! {
             .handle
             .logaction("PACMAN", format_args!("Running '{}'\n", args.join(" ")));
     }
+    crate::callback::set_cfg(&config);
     // start the requested operation
     let ret = match config.op {
         PM_OP_QUERY => crate::query::pacman_query(&config, &pm_targets),

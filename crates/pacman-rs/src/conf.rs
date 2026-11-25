@@ -1008,22 +1008,10 @@ fn setup_libalpm(c: &mut Config) -> i32 {
     *handle.logcb.borrow_mut() = Some(Box::new(crate::callback::cb_log));
     // cb_download
     *handle.dlcb.borrow_mut() = Some(Box::new(crate::callback::cb_download));
-    // cb_event
-    let (op, op_s_sync) = (c.op, c.op_s_sync);
-    let (colon, nocolor) = (c.colstr.colon, c.colstr.nocolor);
-    *handle.eventcb.borrow_mut() = Some(Box::new(move |e| match e {
-        libalpm_rs::handle::Event::DatabaseMissing { dbname } => {
-            if op_s_sync == 0 {
-                pm_printf!(
-                    LOG_WARNING,
-                    "database file for '{}' does not exist (use '{}' to download)\n",
-                    dbname,
-                    if op == PM_OP_FILES { "-Fy" } else { "-Sy" }
-                );
-            }
-        }
-        e => crate::callback::cb_event(e, colon, nocolor),
-    }));
+    // cb_event, cb_question, cb_progress
+    *handle.eventcb.borrow_mut() = Some(Box::new(crate::callback::cb_event));
+    *handle.questioncb.borrow_mut() = Some(Box::new(crate::callback::cb_question));
+    *handle.progresscb.borrow_mut() = Some(Box::new(crate::callback::cb_progress));
 
     if c.op == PM_OP_FILES {
         handle.set_dbext(".files");
