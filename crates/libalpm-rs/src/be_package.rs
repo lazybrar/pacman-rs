@@ -380,8 +380,20 @@ pub(crate) fn pkg_validate_internal(
     syncpkg: Option<&Pkg>,
     level: i32,
 ) -> Result<(i32, Option<SigList>), Error> {
+    let mut sig = None;
+    let v = pkg_validate_full(handle, pkgfile, syncpkg, level, &mut sig)?;
+    Ok((v, sig))
+}
+
+/// `_alpm_pkg_validate_internal` with the signature results handed out even when the check fails
+pub(crate) fn pkg_validate_full(
+    handle: &Handle,
+    pkgfile: &str,
+    syncpkg: Option<&Pkg>,
+    level: i32,
+    siglist_out: &mut Option<SigList>,
+) -> Result<i32, Error> {
     let mut validation = 0;
-    let mut sigdata = None;
     handle.pm_errno.set(None);
     if pkgfile.is_empty() {
         return handle.err(Error::WrongArgs);
@@ -460,11 +472,11 @@ pub(crate) fn pkg_validate_internal(
             level & SIG_PACKAGE_MARGINAL_OK != 0,
             level & SIG_PACKAGE_UNKNOWN_OK != 0,
         );
+        *siglist_out = Some(list);
         if ret != 0 {
             handle.pm_errno.set(Some(Error::PkgInvalidSig));
             return Err(Error::PkgInvalidSig);
         }
-        sigdata = Some(list);
         if has_sig {
             validation |= PKG_VALIDATION_SIGNATURE;
         }
@@ -472,7 +484,7 @@ pub(crate) fn pkg_validate_internal(
     if validation == 0 {
         validation = PKG_VALIDATION_NONE;
     }
-    Ok((validation, sigdata))
+    Ok(validation)
 }
 
 /// read_sigfile: the whole signature file (at most MAX_SIGFILE_SIZE bytes)

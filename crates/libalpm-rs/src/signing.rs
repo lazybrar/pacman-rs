@@ -1009,3 +1009,38 @@ fn sig_result(handle: &Handle, ret: i32, siglist: SigList) -> Result<SigList, Er
         Err(handle.errno().unwrap_or(Error::Gpgme))
     }
 }
+
+/// alpm_pkg_get_sig: the raw signature of a package (from the database entry or the cached `.sig` file)
+pub fn pkg_get_sig(pkg: &Pkg) -> Result<Vec<u8>, Error> {
+    let handle = &pkg.handle;
+    if let Some(b64) = &pkg.base64_sig {
+        return match decode_signature(b64) {
+            Some(s) => Ok(s),
+            None => handle.err(Error::SigInvalid),
+        };
+    }
+    let Some(pkgpath) = crate::util::filecache_find(handle, pkg.filename.as_deref().unwrap_or("")) else {
+        return handle.err(Error::PkgNotFound);
+    };
+    let sp = sigpath(&pkgpath);
+    if crate::util::access(handle, None, &sp, libc::R_OK).is_err() {
+        return handle.err(Error::SigMissing);
+    }
+    match std::fs::read(&sp) {
+        Ok(d) => {
+            alpm_log!(
+                handle,
+                LOG_DEBUG,
+                "found detached signature {} with size {}\n",
+                sp,
+                d.len()
+            );
+            Ok(d)
+        }
+        Err(e) => handle.err(match e.raw_os_error() {
+            Some(libc::EACCES) => Error::Badperms,
+            Some(libc::ENOENT) => Error::NotAFile,
+            _ => Error::System,
+        }),
+    }
+}

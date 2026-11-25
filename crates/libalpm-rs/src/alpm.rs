@@ -41,6 +41,16 @@ pub fn alpm_initialize(root: &str, dbpath: &str) -> Result<Alpm, Error> {
 }
 
 impl Alpm {
+    /// alpm_pkg_get_db: the sync database of a sync package
+    pub fn pkg_db(&self, pkg: &crate::package::Pkg) -> Option<&Db> {
+        if pkg.origin != crate::package::PkgFrom::SyncDb {
+            return None;
+        }
+        self.syncdbs
+            .iter()
+            .find(|d| Some(&d.treename) == pkg.dbname.as_ref())
+    }
+
     /// alpm_register_syncdb
     pub fn register_syncdb(&mut self, treename: &str, siglevel: i32) -> Result<&Db, Error> {
         if treename.is_empty() || treename.contains('/') {

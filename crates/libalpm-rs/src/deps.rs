@@ -191,7 +191,7 @@ fn list_has_ptr(list: &[&Pkg], p: &Pkg) -> bool {
 }
 
 /// alpm_list_diff: elements of lhs missing from rhs, both sorted (stably) by _alpm_pkg_cmp first
-fn pkg_list_diff<'a>(lhs: &[&'a Pkg], rhs: &[&Pkg]) -> Vec<&'a Pkg> {
+pub(crate) fn pkg_list_diff<'a>(lhs: &[&'a Pkg], rhs: &[&Pkg]) -> Vec<&'a Pkg> {
     let mut left = lhs.to_vec();
     left.sort_by(|a, b| pkg_cmp(a, b));
     let mut right = rhs.to_vec();

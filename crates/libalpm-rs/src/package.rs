@@ -96,6 +96,8 @@ pub struct Pkg {
     pub base64_sig: Option<String>,
     /// package file size (sync and file packages)
     pub size: i64,
+    /// pkg->download_size; None while INFRQ_DSIZE is not set
+    pub dsize: Cell<Option<i64>>,
     pub(crate) desc: OnceCell<Desc>,
     pub(crate) files: OnceCell<FilesData>,
     pub(crate) scriptlet: OnceCell<bool>,
@@ -126,6 +128,7 @@ impl Pkg {
             sha256sum: None,
             base64_sig: None,
             size: 0,
+            dsize: Cell::new(None),
             desc: OnceCell::new(),
             files: OnceCell::new(),
             scriptlet: OnceCell::new(),
@@ -200,6 +203,15 @@ pub fn pkg_compare_versions(spkg: &Pkg, localpkg: &Pkg) -> i32 {
 /// _alpm_pkg_cmp
 pub fn pkg_cmp(a: &Pkg, b: &Pkg) -> std::cmp::Ordering {
     a.name.as_bytes().cmp(b.name.as_bytes())
+}
+
+/// alpm_pkg_find over a list of references
+pub fn pkg_find_ref<'a>(haystack: &[&'a Pkg], needle: &str) -> Option<&'a Pkg> {
+    let h = crate::util::hash_sdbm(needle);
+    haystack
+        .iter()
+        .copied()
+        .find(|p| p.name_hash == h && p.name == needle)
 }
 
 /// alpm_pkg_find

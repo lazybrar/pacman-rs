@@ -20,6 +20,18 @@ pub enum Event {
     PkgRetrieveStart { num: usize, total_size: i64 },
     PkgRetrieveDone,
     PkgRetrieveFailed,
+    ResolveDepsStart,
+    ResolveDepsDone,
+    InterConflictsStart,
+    InterConflictsDone,
+    IntegrityStart,
+    IntegrityDone,
+    KeyringStart,
+    KeyringDone,
+    KeyDownloadStart,
+    KeyDownloadDone,
+    LoadStart,
+    LoadDone,
 }
 
 pub type EventCb = Box<dyn Fn(&Event)>;
@@ -70,6 +82,58 @@ pub enum Question<'a> {
         providers: Vec<&'a crate::package::Pkg>,
         depend: &'a Dep,
     },
+    /// alpm_question_replace_t
+    Replace {
+        replace: bool,
+        oldpkg: &'a crate::package::Pkg,
+        newpkg: &'a crate::package::Pkg,
+        newdb: &'a crate::db::Db,
+    },
+    /// alpm_question_conflict_t
+    Conflict {
+        remove: bool,
+        conflict: &'a crate::conflict::Conflict<'a>,
+    },
+    /// alpm_question_remove_pkgs_t
+    RemovePkgs {
+        skip: bool,
+        packages: Vec<&'a crate::package::Pkg>,
+    },
+    /// alpm_question_corrupted_t
+    Corrupted {
+        remove: bool,
+        filepath: &'a str,
+        reason: Error,
+    },
+}
+
+/// alpm_progress_t (the values raised so far)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Progress {
+    IntegrityStart,
+    LoadStart,
+    KeyringStart,
+}
+
+/// alpm_cb_progress: (what, pkgname, percent, howmany, current)
+pub type ProgressCb = Box<dyn Fn(Progress, &str, i32, usize, usize)>;
+
+/// alpm_trans_t state (STATE_IDLE is "no transaction")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransState {
+    Initialized,
+    Prepared,
+    Downloading,
+    Committing,
+    Committed,
+    Interrupted,
+}
+
+/// the flags and state of handle->trans (the package lists live in `trans::Trans`)
+#[derive(Debug, Clone, Copy)]
+pub struct TransHdr {
+    pub flags: i32,
+    pub state: TransState,
 }
 
 pub type QuestionCb = Box<dyn for<'a> Fn(&mut Question<'a>)>;
@@ -113,6 +177,9 @@ pub struct Handle {
     pub logcb: RefCell<Option<LogCb>>,
     pub eventcb: RefCell<Option<EventCb>>,
     pub questioncb: RefCell<Option<QuestionCb>>,
+    pub progresscb: RefCell<Option<ProgressCb>>,
+    /// handle->trans (None is no transaction)
+    pub trans: Cell<Option<TransHdr>>,
     pub dlcb: RefCell<Option<DlCb>>,
     pub fetchcb: RefCell<Option<FetchCb>>,
     /// handle->server_errors: errors per host (-1 is a hard error)
@@ -171,6 +238,8 @@ impl Handle {
             logcb: RefCell::new(None),
             eventcb: RefCell::new(None),
             questioncb: RefCell::new(None),
+            progresscb: RefCell::new(None),
+            trans: Cell::new(None),
             dlcb: RefCell::new(None),
             fetchcb: RefCell::new(None),
             server_errors: RefCell::new(Vec::new()),
@@ -315,6 +384,18 @@ impl Handle {
             return -1;
         }
         0
+    }
+
+    /// PROGRESS
+    pub fn progress(&self, what: Progress, pkgname: &str, percent: i32, howmany: usize, current: usize) {
+        if let Some(cb) = self.progresscb.borrow().as_ref() {
+            cb(what, pkgname, percent, howmany, current);
+        }
+    }
+
+    /// handle->trans->flags (0 without a transaction)
+    pub fn trans_flags(&self) -> i32 {
+        self.trans.get().map_or(0, |t| t.flags)
     }
 
     /// QUESTION
