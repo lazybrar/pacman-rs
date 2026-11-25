@@ -352,11 +352,6 @@ struct Case {
     keyring: bool,
 }
 
-/// -Sw prints the transaction summary and prompts of sync.c (T13): compare stdout only for -Sy/-Fy runs
-fn compares_stdout(args: &[&str]) -> bool {
-    !args.contains(&"-Sw")
-}
-
 fn simple_repo(names: &'static [&'static str]) -> RepoFn {
     Box::new(move |ports| {
         names
@@ -896,13 +891,13 @@ fn run_program(bin: &str, case: &Case, idx: &AtomicUsize) -> Outcome {
     }
 }
 
-fn diff_outcomes(case: &Case, a: &Outcome, b: &Outcome) -> Vec<String> {
+fn diff_outcomes(_case: &Case, a: &Outcome, b: &Outcome) -> Vec<String> {
     let mut v = Vec::new();
     for (i, (x, y)) in a.runs.iter().zip(&b.runs).enumerate() {
         if x.0 != y.0 {
             v.push(format!("run {i}: exit {} vs {}", x.0, y.0));
         }
-        if x.1 != y.1 && compares_stdout(&case.runs[i]) {
+        if x.1 != y.1 {
             v.push(format!(
                 "run {i}: stdout\n--- ours\n{}\n--- system\n{}",
                 x.1, y.1

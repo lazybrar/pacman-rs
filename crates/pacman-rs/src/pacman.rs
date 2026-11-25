@@ -1052,6 +1052,7 @@ pub fn main() -> ! {
         libalpm_rs::alpm::LIB_VERSION
     );
 
+    crate::callback::set_cfg(&config);
     // parse the config file
     let file = config.configfile.clone();
     let ret = parseconfig(&mut config, &file);
